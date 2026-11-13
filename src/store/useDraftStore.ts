@@ -18,6 +18,8 @@ interface DraftState {
   crsLabel: string;
   mode: DraftMode;
   source: LngLat | null;
+  /** source 를 자동으로 정했는지 (종류를 바꾸면 다시 정해야 한다: 상수=가장 높은 곳, 하수=가장 낮은 곳). */
+  sourceAuto: boolean;
   maxServiceDistance: number;
   maxPipeLength: number;
   water: WaterDraftOptions;
@@ -51,6 +53,7 @@ export const useDraftStore = create<DraftState>()((set) => ({
   crsLabel: '',
   mode: 'water',
   source: null,
+  sourceAuto: false,
   maxServiceDistance: 80,
   maxPipeLength: 300,
   water: { ...DEFAULT_WATER_DRAFT },

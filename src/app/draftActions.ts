@@ -73,7 +73,7 @@ export function pickDraftSource(): void {
   useUIStore.getState().setPointPick({
     label: useDraftStore.getState().mode === 'water' ? '수원(배수지·급수 접속점) 위치' : '방류구(처리장·간선 접속점) 위치',
     returnTo: 'draft',
-    onPick: (p) => useDraftStore.getState().set({ source: p, result: null }),
+    onPick: (p) => useDraftStore.getState().set({ source: p, sourceAuto: false, result: null }),
   });
 }
 
@@ -85,7 +85,8 @@ export async function generateDraft(): Promise<void> {
   const warnings: string[] = [];
   store.set({ busy: '준비 중…', error: null, result: null });
   try {
-    let source = store.source;
+    // 자동으로 정한 위치는 매번 다시 정한다 (상수↔하수를 바꾸면 기준이 반대)
+    let source = store.sourceAuto ? null : store.source;
     if (!source) {
       store.set({ busy: '수원 위치를 정하려고 수용가 지반고를 읽는 중…' });
       const z = await sampleTerrainTiles(customers.map((c) => c.position));
@@ -93,7 +94,7 @@ export async function generateDraft(): Promise<void> {
       for (let i = 1; i < z.length; i++) if (mode === 'water' ? z[i] > z[k] : z[i] < z[k]) k = i;
       source = customers[k].position;
       warnings.push(`${mode === 'water' ? '수원' : '방류구'} 위치를 지정하지 않아 ${mode === 'water' ? '가장 높은' : '가장 낮은'} 수용가(${customers[k].id}, 지반고 ${z[k].toFixed(1)} m) 근처로 정했습니다.`);
-      useDraftStore.getState().set({ source });
+      useDraftStore.getState().set({ source, sourceAuto: true });
     }
     const box = bboxOf([...customers.map((c) => c.position), source])!;
     const padLat = 400 / 110540;

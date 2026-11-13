@@ -155,7 +155,9 @@ function DraftDialog() {
             <SelectField
               value={s.mode}
               options={[{ value: 'water', label: '상수 (배수관망)' }, { value: 'sewer', label: '하수 (오수 관거)' }]}
-              onChange={(v) => s.set({ mode: v as typeof s.mode, maxPipeLength: v === 'sewer' ? 75 : 300, result: null })}
+              onChange={(v) =>
+                s.set({ mode: v as typeof s.mode, maxPipeLength: v === 'sewer' ? 75 : 300, result: null, ...(s.sourceAuto ? { source: null, sourceAuto: false } : {}) })
+              }
             />
           </Field>
           <Field label="수용가→도로 최대 거리 (m)" w="w-40">
@@ -171,10 +173,12 @@ function DraftDialog() {
             지도에서 {s.mode === 'water' ? '수원' : '방류구'} 위치 찍기
           </Button>
           <span className="text-[11px] text-ink-soft">
-            {s.source ? `${formatLngLat(s.source)}` : `지정 안 함 → ${s.mode === 'water' ? '가장 높은' : '가장 낮은'} 수용가 근처로 자동`}
+            {s.source && !s.sourceAuto
+              ? `${formatLngLat(s.source)}`
+              : `${s.source ? '자동으로 정함' : '지정 안 함'} → ${s.mode === 'water' ? '가장 높은' : '가장 낮은'} 수용가 근처 (초안 만들 때마다 다시 정함)`}
           </span>
           {s.source && (
-            <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => s.set({ source: null, result: null })}>
+            <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => s.set({ source: null, sourceAuto: false, result: null })}>
               지우기
             </button>
           )}
