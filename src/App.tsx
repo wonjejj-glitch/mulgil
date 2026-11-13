@@ -228,7 +228,7 @@ function EmptyState() {
       <div className="pointer-events-auto w-[400px] max-w-full rounded-lg border border-line bg-panel/95 p-5 shadow-2xl backdrop-blur">
         <h2 className="text-sm font-semibold text-ink">관망이 비어 있습니다</h2>
         <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
-          EPANET .inp, GeoJSON 또는 Shapefile(.zip) 을 이 창에 끌어다 놓거나 샘플 관망으로 시작하세요. 상단 도구(절점 J, 수원지 R, 관로 P)로 지도에
+          EPANET·SWMM .inp, GeoJSON 또는 Shapefile(.zip) 을 이 창에 끌어다 놓거나 샘플 관망으로 시작하세요. SWMM 파일은 우수·하수 해석 화면으로 열립니다. 상단 도구(절점 J, 수원지 R, 관로 P)로 지도에
           직접 그릴 수도 있습니다.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -267,7 +267,7 @@ function DropOverlay() {
       <div className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-accent px-12 py-10 text-ink">
         <Upload size={28} className="text-accent" />
         <p className="text-sm font-semibold">여기에 놓아 불러오기</p>
-        <p className="text-xs text-ink-muted">EPANET .inp · GeoJSON · Shapefile(.shp+.dbf+.prj 또는 .zip)</p>
+        <p className="text-xs text-ink-muted">EPANET·SWMM .inp · GeoJSON · Shapefile(.shp+.dbf+.prj 또는 .zip)</p>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import {
   BookOpen,
+  CloudRain,
   LayoutGrid,
   Users,
   Wrench,
@@ -189,7 +190,7 @@ export function TopToolbar() {
             />
             <MenuItem
               icon={FolderOpen}
-              label="열기 (.inp / .geojson / .shp·.zip)"
+              label="열기 (EPANET·SWMM .inp / .geojson / .shp·.zip)"
               hint="Ctrl+O"
               onClick={() => {
                 close();
@@ -283,6 +284,23 @@ export function TopToolbar() {
               }}
             />
             <div className="my-1 border-t border-line" />
+            <div className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">우수 · 하수 (SWMM)</div>
+            <MenuItem
+              icon={FolderOpen}
+              label="SWMM .inp 열기 → 해석 · 결과 보기"
+              onClick={() => {
+                close();
+                fileInput.current?.click();
+              }}
+            />
+            <MenuItem
+              icon={CloudRain}
+              label="우수관망 예제로 해보기"
+              onClick={() => {
+                close();
+                void loadSample('sample-sewer.inp');
+              }}
+            />
             <MenuItem
               icon={Waves}
               label="하수관 자동 설계 (우·오수)"
