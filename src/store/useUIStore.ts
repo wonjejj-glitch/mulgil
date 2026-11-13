@@ -2,7 +2,11 @@ import { create } from 'zustand';
 import type { LinkType, LngLat } from '../core/model/types';
 import type { BBox, ImportCrsChoice } from '../utils/geoMath';
 
-export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve';
+export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve' | 'manhole' | 'outfall' | 'conduit';
+/** 작업 영역: 상수(EPANET 관망) / 하수(useSewerStore 의 하수 프로젝트). */
+export type Domain = 'water' | 'sewer';
+export const SEWER_TOOLS: ReadonlySet<Tool> = new Set(['manhole', 'outfall', 'conduit']);
+export type SewerBottomTab = 'profile' | 'review' | 'simulation';
 export type Selection = { kind: 'node' | 'link'; id: string } | null;
 
 /** 다중 선택(구역 선택·Ctrl+클릭). 단일 선택(selection)과 별개로 관리한다. */
@@ -98,6 +102,13 @@ function persist(value: PersistedUI): void {
 }
 
 interface UIState {
+  domain: Domain;
+  /** 하수 모드: 관거 작도에서 먼저 고른 상류 절점 */
+  sewerDrawStart: string | null;
+  sewerBottomTab: SewerBottomTab;
+  setDomain: (domain: Domain) => void;
+  setSewerDrawStart: (id: string | null) => void;
+  setSewerBottomTab: (tab: SewerBottomTab) => void;
   tool: Tool;
   selection: Selection;
   highlight: Highlight | null;
@@ -156,6 +167,17 @@ let cameraCounter = 0;
 const persisted = loadPersisted();
 
 export const useUIStore = create<UIState>()((set, get) => ({
+  domain: 'water',
+  sewerDrawStart: null,
+  sewerBottomTab: 'profile',
+  setDomain: (domain) =>
+    set((s) =>
+      s.domain === domain
+        ? s
+        : { domain, tool: 'select', drawing: null, snapNodeId: null, areaDraft: [], sewerDrawStart: null, selection: null, multiSelection: null, highlight: null },
+    ),
+  setSewerDrawStart: (sewerDrawStart) => set({ sewerDrawStart }),
+  setSewerBottomTab: (sewerBottomTab) => set({ sewerBottomTab, bottomCollapsed: false }),
   tool: 'select',
   selection: null,
   highlight: null,
@@ -188,9 +210,9 @@ export const useUIStore = create<UIState>()((set, get) => ({
   profileWaypoints: [],
   pointPick: null,
 
-  setTool: (tool) => set({ tool, drawing: null, snapNodeId: null, areaDraft: [] }),
+  setTool: (tool) => set({ tool, drawing: null, snapNodeId: null, areaDraft: [], sewerDrawStart: null }),
   setPointPick: (pointPick) => {
-    if (pointPick) set({ pointPick, modal: null, tool: 'select', drawing: null });
+    if (pointPick) set({ pointPick, modal: null, tool: 'select', drawing: null, sewerDrawStart: null });
     else set((s) => ({ pointPick: null, modal: s.pointPick?.returnTo ?? s.modal }));
   },
   select: (selection) => set({ selection }),

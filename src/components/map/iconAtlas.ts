@@ -1,8 +1,8 @@
 /**
- * 지도 심벌(유향 화살표, 수원지, 배수지, 펌프, 밸브) 아이콘 아틀라스를 캔버스로 그려 만든다.
+ * 지도 심벌(유향 화살표, 수원지, 배수지, 펌프, 밸브, 하수 방류구) 아이콘 아틀라스를 캔버스로 그려 만든다.
  */
 const SIZE = 64;
-const NAMES = ['arrow', 'reservoir', 'tank', 'pump', 'valve'] as const;
+const NAMES = ['arrow', 'reservoir', 'tank', 'pump', 'valve', 'outfall'] as const;
 export type IconName = (typeof NAMES)[number];
 
 export const ICON_MAPPING: Record<IconName, { x: number; y: number; width: number; height: number; mask: boolean }> = {
@@ -11,6 +11,7 @@ export const ICON_MAPPING: Record<IconName, { x: number; y: number; width: numbe
   tank: { x: SIZE * 2, y: 0, width: SIZE, height: SIZE, mask: false },
   pump: { x: SIZE * 3, y: 0, width: SIZE, height: SIZE, mask: false },
   valve: { x: SIZE * 4, y: 0, width: SIZE, height: SIZE, mask: false },
+  outfall: { x: SIZE * 5, y: 0, width: SIZE, height: SIZE, mask: false },
 };
 
 const OUTLINE = '#0f1318';
@@ -124,6 +125,27 @@ export function getIconAtlas(): string {
   ctx.closePath();
   ctx.stroke();
   ctx.fill();
+  ctx.restore();
+
+  // 방류구(하수): 아래로 향한 삼각형 + 수면선
+  ctx.save();
+  ctx.translate(SIZE * 5, 0);
+  ctx.fillStyle = '#ec835a';
+  ctx.strokeStyle = OUTLINE;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(8, 10);
+  ctx.lineTo(56, 10);
+  ctx.lineTo(32, 46);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.fill();
+  ctx.strokeStyle = LIGHT;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(12, 56);
+  ctx.lineTo(52, 56);
+  ctx.stroke();
   ctx.restore();
 
   cached = canvas.toDataURL('image/png');

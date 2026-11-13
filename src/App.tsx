@@ -1,8 +1,13 @@
 import { FolderOpen, History, Spline, Upload, Users } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { deleteSelection, exportInp, fitToNetwork, importFiles, loadSample, runSimulation, selectAll } from './app/actions';
-import { readBackup, startAutoBackup, type Backup } from './app/autoBackup';
+import { readBackup, startAutoBackup, startSewerBackup, type Backup } from './app/autoBackup';
 import { restoreBackup } from './app/draftActions';
+import { saveSewerProject } from './app/sewerActions';
+import { deleteSewerSelection, fitToSewer, runSewerFromMap } from './app/sewerMapActions';
+import { SewerDock } from './components/sewer/SewerDock';
+import { SewerPropertyPanel } from './components/sewer/SewerPropertyPanel';
+import { useSewerStore } from './store/useSewerStore';
 import { useDraftStore } from './store/useDraftStore';
 import { BottomTimelineDock } from './components/layout/BottomTimelineDock';
 import { LeftLayerPanel } from './components/layout/LeftLayerPanel';
@@ -60,6 +65,14 @@ const TOOL_KEYS: Record<string, Tool> = {
   KeyL: 'valve',
 };
 
+/** 하수 모드 도구 단축키 (상수 도구 키와 겹쳐도 모드가 달라 충돌하지 않는다). */
+const SEWER_TOOL_KEYS: Record<string, Tool> = {
+  KeyV: 'select',
+  KeyM: 'manhole',
+  KeyO: 'outfall',
+  KeyC: 'conduit',
+};
+
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
@@ -76,6 +89,8 @@ function useGlobalShortcuts(): void {
       const ui = useUIStore.getState();
       const net = useNetworkStore.getState();
       const mod = event.ctrlKey || event.metaKey;
+      // 하수 모드(읽기 전용 SWMM 보기가 열려 있지 않을 때): 편집 단축키가 하수 프로젝트에 작용한다.
+      const sewer = ui.domain === 'sewer' && !useSwmmStore.getState().project;
 
       if (mod && event.code === 'KeyO') {
         event.preventDefault();
@@ -84,40 +99,44 @@ function useGlobalShortcuts(): void {
       }
       if (mod && event.code === 'KeyS') {
         event.preventDefault();
-        exportInp();
+        if (sewer) saveSewerProject();
+        else exportInp();
         return;
       }
       if (event.key === 'F5' && !mod) {
         event.preventDefault();
-        if (!ui.modal) void runSimulation();
+        if (!ui.modal) void (sewer ? runSewerFromMap() : runSimulation());
         return;
       }
       // 입력란에서는 브라우저 기본 동작(입력 내용 실행 취소 등)을 그대로 둔다.
       if (isTypingTarget(event.target) || ui.modal) return;
 
+      const history = sewer ? useSewerStore.getState() : net;
       if (mod && event.code === 'KeyZ') {
         event.preventDefault();
-        if (event.shiftKey) net.redo();
-        else net.undo();
+        if (event.shiftKey) history.redo();
+        else history.undo();
         return;
       }
       if (mod && event.code === 'KeyY') {
         event.preventDefault();
-        net.redo();
+        history.redo();
         return;
       }
       if (mod && event.code === 'KeyA') {
         event.preventDefault();
-        selectAll();
+        if (!sewer) selectAll();
         return;
       }
       if (mod || event.altKey) return;
 
       if (event.key === 'Escape') {
         if (ui.pointPick) ui.setPointPick(null);
+        else if (ui.sewerDrawStart) ui.setSewerDrawStart(null);
         else if (ui.drawing) ui.setDrawing(null);
         else if (ui.areaDraft.length > 0) ui.setAreaDraft([]);
         else if (ui.tool !== 'select') ui.setTool('select');
+        else if (sewer) useSewerStore.getState().select(null);
         else {
           ui.select(null);
           ui.setHighlight(null);
@@ -126,11 +145,13 @@ function useGlobalShortcuts(): void {
         return;
       }
       if (event.key === 'Delete') {
-        deleteSelection();
+        if (sewer) deleteSewerSelection();
+        else deleteSelection();
         return;
       }
       if (event.code === 'KeyF') {
-        fitToNetwork();
+        if (sewer) fitToSewer();
+        else fitToNetwork();
         return;
       }
       if (event.code === 'Space') {
@@ -150,6 +171,11 @@ function useGlobalShortcuts(): void {
           event.preventDefault();
           sim.setPlaying(!sim.playing);
         }
+        return;
+      }
+      if (ui.domain === 'sewer') {
+        const sewerTool = sewer ? SEWER_TOOL_KEYS[event.code] : undefined;
+        if (sewerTool) ui.setTool(sewerTool);
         return;
       }
       const tool = TOOL_KEYS[event.code];
@@ -218,10 +244,35 @@ function EmptyState() {
   const swmmOpen = useSwmmStore((s) => s.project !== null);
   const picking = useUIStore((s) => s.pointPick !== null);
   const drafting = useDraftStore((s) => s.overlay && s.customers.length > 0);
+  const sewer = useUIStore((s) => s.domain === 'sewer');
+  const sewerEmpty = useSewerStore((s) => s.project.nodes.length === 0);
   const [backup, setBackup] = useState<Backup | null>(null);
   useEffect(() => {
     if (empty) void readBackup().then(setBackup);
   }, [empty]);
+  if (sewer) {
+    if (!sewerEmpty || tool !== 'select' || swmmOpen || picking || drafting) return null;
+    return (
+      <div className="pointer-events-none absolute inset-x-0 top-16 z-10 flex justify-center p-4">
+        <div className="pointer-events-auto w-[400px] max-w-full rounded-lg border border-line bg-panel/95 p-5 shadow-2xl backdrop-blur">
+          <h2 className="text-sm font-semibold text-ink">하수 관망이 비어 있습니다</h2>
+          <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">
+            상단 도구로 맨홀(M)과 방류구(O)를 찍고, 관거(C)는 상류 → 하류 순서로 잇습니다. 수용가 자료로 초안을 만들거나, 파일 메뉴에서 SWMM .inp 를 편집 가능한 하수 관망으로 가져올 수도
+            있습니다.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="primary" onClick={() => useUIStore.getState().setTool('manhole')}>
+              맨홀 찍기 시작
+            </Button>
+            <Button onClick={() => useUIStore.getState().openModal('draft')}>
+              <Users size={14} />
+              수용가 자료로 만들기
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!empty || tool !== 'select' || swmmOpen || picking || drafting) return null;
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
@@ -277,8 +328,10 @@ function DropOverlay() {
 export function App() {
   useGlobalShortcuts();
   useEffect(startAutoBackup, []);
+  useEffect(startSewerBackup, []);
   const dropActive = useFileDrop();
   const swmmActive = useSwmmStore((s) => s.project !== null);
+  const sewer = useUIStore((s) => s.domain === 'sewer');
   return (
     <div className="flex h-full flex-col bg-canvas text-ink">
       <TopToolbar />
@@ -290,9 +343,9 @@ export function App() {
             <EmptyState />
             <Toaster />
           </div>
-          {swmmActive ? <SwmmDock /> : <BottomTimelineDock />}
+          {swmmActive ? <SwmmDock /> : sewer ? <SewerDock /> : <BottomTimelineDock />}
         </main>
-        {swmmActive ? <SwmmRightPanel /> : <RightPropertyPanel />}
+        {swmmActive ? <SwmmRightPanel /> : sewer ? <SewerPropertyPanel /> : <RightPropertyPanel />}
       </div>
       <ModalHost />
       {dropActive && <DropOverlay />}

@@ -94,7 +94,7 @@ src/
 │   │   ├── profile.ts            # 종단면도 최단 경로(Dijkstra), 경유점 경로
 │   │   ├── selection.ts          # 다각형 구역 선택, 다중 선택 집합 연산
 │   │   └── curvesControls.ts     # 곡선·패턴 이름 변경/삭제(참조 갱신), 곡선 형식 검사, 제어 규칙 작성·검사
-│   ├── sewer/                    # 하수관 자동 설계 (SewerStudio 호환 이식) + fixtures/ 정답 벡터
+│   ├── sewer/                    # 하수관 자동 설계 (SewerStudio 호환 이식) + fixtures/ 정답 벡터, 지도 편집(mapFrame·edit·fromSwmmInp)
 │   ├── swmm/
 │   │   ├── inpReader.ts          # SWMM .inp → 지도용 형상(절점·링크·유역·강우계), 좌표계 감지
 │   │   ├── swmmRunner.ts         # WASM 실행 (Worker·테스트 공용; window/document 최소 shim 후 동적 import)
@@ -198,7 +198,7 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     최소 관경·최소 경사를 쓰고 '유속 범위' 위반으로 남김). 정답 벡터 테스트는 compat 로만 돈다. 앱 설정은 `useSewerStore.designMode`(설계 조건 탭).
   - **검토 목록**(`review.ts`, 설계 대화상자 5번째 탭): 기존 하수 설계 프로그램의 검토 목록 판정 체계 — Overflow·최소/최대 유속(0.6/3.0)·동수위(GL+0, SWMM 결과 필요)·역경사,
     GOOD/NG/-, 다음 NG, CSV.
-  - 아직 없는 것: 지도에서 맨홀·관로를 찍어 입력, 기존 SWMM .inp → 설계 모델 변환(원형관·수지상만 가능).
+  - 지도에서 맨홀·관로를 찍어 입력, SWMM .inp → 설계 모델 변환은 아래 ‘하수 모드’ 참고.
 - **수용가 CSV → 관망 초안**(데이터 메뉴, `NetworkBuildModals.tsx` + `app/draftActions.ts`):
   `core/io/customerCsv.ts`(UTF-8/CP949 자동, 열 추정, 월→일 환산) → `core/model/networkDraft.ts`(도로 15 m 분할 그래프, 수용가 최근접 접속,
   Takahashi–Matsuyama 탐욕 스타이너 나무, 하수는 오르막 벌점, 5 m 미만 관 병합) → `draftConvert.ts`(상수 NetworkModel: 유속 기준 표준 관경 / 하수 SewerProject: EPSG:5186 좌표).
@@ -231,6 +231,23 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
   앱과 다른 인스턴스일 수 있다 — performance 리소스 목록에서 최신 `?t=` URL 을 골라 import 할 것.
 - **관망이 사라지고 배경지도만 보일 때**: 관망 레이어(deck.gl)는 별도 WebGL 캔버스다. 탭을 오래 켜 두거나 새로고침·핫리로드를 반복하면 브라우저가 컨텍스트를 끊는다.
   `GisMapCanvas` 가 `webglcontextlost` 를 받으면 오버레이(`key={deckEpoch}`)와 레이어 인스턴스(`deckLayers` 의존성)를 함께 새로 만든다 — 레이어 인스턴스를 재사용하면 새 오버레이에서 그려지지 않는다.
+- **하수 모드 (1단계, 2026-11-14)**: `useUIStore.domain: 'water' | 'sewer'` — 툴바 [상수 | 하수] 토글(`TopToolbar` `DomainToggle`, 전환은 `app/sewerMapActions.ts` `switchDomain`).
+  하수 모드에서는 지도·우측 패널·하단 도크·툴바 도구·데이터/파일 메뉴·Undo/Redo·Delete·F·F5 가 전부 `useSewerStore.project`(SewerProject)에 작용한다. 상수 모델은 그대로 남는다.
+  읽기 전용 SWMM 보기(`useSwmmStore.project`)는 두 모드 위에 뜨는 별도 화면이고(열려 있으면 우선), 닫으면 원래 모드로 돌아간다.
+  - **좌표 결정**: SewerProject 스키마는 그대로(절점 x, y 만 있음). x, y 는 **EPSG:5186(m)** 로 저장한다(초안·SWMM 가져오기·지도 작도 모두). `core/sewer/mapFrame.ts` `sewerFrame()` 이
+    전 절점이 5186 범위면 `epsg`, 아니면(예제 x≈0~600) `local` — 좌표 범위 중심을 `DEFAULT_ANCHOR` 의 5186 좌표로 **평행 이동**해 그린다(회전·축척 없음 → 거리 유지).
+    local 프로젝트를 지도에서 편집(절점 추가·이동)하면 그 순간 `georeference()` 가 전 절점을 5186 으로 옮긴다(보이는 위치 그대로, 실행 취소 한 단계에 포함).
+    관거 연장은 5186 평면 거리(`planarLength`) — 경위도 거리가 아니다. 저장 형식에 좌표계 표시는 없다(범위로 판별).
+  - 파일: `core/sewer/mapFrame.ts`(좌표), `edit.ts`(ID 생성 MH001/OF1/P001, 맨홀·관거 추가, 이동 시 연장 재계산, 삭제, ID 변경, 지반고 반영 — 전부 순수 함수, 스토어 `edit(recipe)` 안에서 호출),
+    `fromSwmmInp.ts`(SWMM .inp → SewerProject + 경고 목록; 위치는 `readSwmmInp` 의 WGS84 → 5186, 단위 환산, ID 규칙 보정), `components/map/sewerLayers.ts`(deck 레이어, 픽킹 ID `sewer-nodes`/`sewer-conduits`),
+    `components/sewer/`(`SewerPropertyPanel`, `SewerDock`, `SewerShared` = 설계 대화상자와 함께 쓰는 종단도·검토 목록·해석 요약), `app/sewerMapActions.ts`(전환·삭제·맞춤·설계/해석 실행·가져오기·지반고 보정).
+    지도 클릭·드래그 분기는 `GisMapCanvas.tsx` 의 `ui.domain === 'sewer'` 블록 한 곳.
+  - `useSewerStore`: `selection`(지도 선택), `edit(recipe, mergeKey?)` + `sealHistory()`(절점 끌기를 Undo 한 단계로). 입력이 바뀌면 설계·해석 결과는 지워진다(기존 동작).
+  - '설계·해석 실행'(F5) = `runSewerFromMap` → `runSewerSimulation`(설계 없으면 자동 설계 → SWMM). 반복 검토(관경 자동 확대)는 우측 패널 단추. 오류는 토스트 + 우측 패널.
+  - 색: 관거 = 설계 행 status('적합' 여부), 맨홀 = 해석 요약(월류/만관 초과). 설계 전에는 중립색. 굵기 = 관경.
+  - **compat 설계 모드·`core/sewer/fixtures/`·`validate.ts` 스키마는 건드리지 않았다.** 빈 프로젝트(`emptySewerProject`)는 스키마 검증(절점 2개·관로 1개 이상)을 통과하지 못하는 편집 중 상태다.
+  - 아직 없는 것: 유역 다각형 작도(유역은 표 편집만, 지도에 안 그림), 압송관·펌프장, 박스관(비원형), 맨홀 라이브러리, 하수 도면 내보내기(Shapefile/DXF), 다중·구역 선택, 관거 꺾임점,
+    하수 프로젝트 자동 백업(IndexedDB 는 상수만), 왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.
 
 ## 7. 다음 작업 후보

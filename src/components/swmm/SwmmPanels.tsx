@@ -2,6 +2,7 @@ import { Pause, Play, SkipBack, SkipForward, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { closeSwmm, runSwmmAnalysis } from '../../app/actions';
+import { convertOpenSwmmToSewer } from '../../app/sewerMapActions';
 import {
   daysToDate,
   linkSeriesOf,
@@ -110,7 +111,7 @@ export function SwmmRightPanel() {
       <Section
         title="우수·하수관망 (SWMM)"
         action={
-          <button type="button" title="SWMM 보기를 닫고 상수관망으로 돌아갑니다" className="text-ink-muted hover:text-ink" onClick={closeSwmm}>
+          <button type="button" title="SWMM 보기를 닫고 편집 화면(상수 또는 하수)으로 돌아갑니다" className="text-ink-muted hover:text-ink" onClick={closeSwmm}>
             <X size={14} />
           </button>
         }
@@ -137,8 +138,12 @@ export function SwmmRightPanel() {
           {status === 'running' ? '해석 중…' : 'SWMM 해석 실행 (F5)'}
         </Button>
         <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
-          읽기 전용 보기입니다. 입력 파일 원문을 그대로 SWMM 5.2 엔진에 넘기므로 모든 섹션이 반영됩니다. 편집은 EPA SWMM 등에서 하고 다시 불러오세요.
+          읽기 전용 보기입니다. 입력 파일 원문을 그대로 SWMM 5.2 엔진에 넘기므로 모든 섹션이 반영됩니다.
         </p>
+        <Button className="mt-2 w-full" onClick={convertOpenSwmmToSewer} title="맨홀·방류구·원형 관거·유역을 하수 모드의 편집 가능한 관망으로 옮깁니다. 펌프·위어·비원형 단면 등 옮기지 못한 것은 목록으로 알려 줍니다.">
+          편집 가능한 하수 관망으로 가져오기
+        </Button>
+        <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">하수 모드로 바뀌며 지도에서 맨홀·관거를 고치고 자동 설계할 수 있습니다(원형관·중력식·가지형만).</p>
       </Section>
 
       <Section title="색상 표시">

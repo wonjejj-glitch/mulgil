@@ -17,7 +17,7 @@ import type { LinkType, LngLat, NetworkNode, NodeType } from '../../core/model/t
 import { formatNumber, isUsUnits, unitLabels } from '../../core/model/units';
 import { useNetworkStore } from '../../store/useNetworkStore';
 import { useSimulationStore } from '../../store/useSimulationStore';
-import { useUIStore, type Selection, type Tool } from '../../store/useUIStore';
+import { SEWER_TOOLS, useUIStore, type Selection, type Tool } from '../../store/useUIStore';
 import { midpointOfPath, wgs84ToEpsg } from '../../utils/geoMath';
 import { useDraftStore } from '../../store/useDraftStore';
 import { buildMapStyle } from './basemaps';
@@ -30,6 +30,11 @@ import { useSwmmStore } from '../../store/useSwmmStore';
 import { SwmmLegend } from '../swmm/SwmmPanels';
 import { buildSwmmLayers } from '../swmm/swmmLayers';
 import { useSwmmThematic } from '../swmm/swmmThematic';
+import { addSewerConduit, addSewerNode, conduitProblem, moveSewerNode } from '../../core/sewer/edit';
+import type { SewerNode } from '../../core/sewer/types';
+import { useSewerStore } from '../../store/useSewerStore';
+import { toCss } from '../../utils/colorScales';
+import { buildSewerLayers, SEWER_COLORS, SEWER_CONDUIT_LAYER, SEWER_NODE_LAYER, sewerMapData, type SewerConduitDatum, type SewerMapData, type SewerNodeDatum } from './sewerLayers';
 
 const NODE_TOOLS: ReadonlySet<Tool> = new Set(['junction', 'reservoir', 'tank']);
 const LINK_TOOLS: ReadonlySet<Tool> = new Set(['pipe', 'pump', 'valve']);
@@ -44,7 +49,37 @@ const TOOL_HINTS: Record<Tool, string> = {
   pipe: '시작 절점 클릭 → 빈 곳 클릭으로 꺾임점 추가 → 절점 클릭 또는 더블클릭으로 완료 · Esc/우클릭 종료',
   pump: '흡입측 절점 → 토출측 절점 순서로 클릭합니다 · Esc/우클릭 종료',
   valve: '상류측 절점 → 하류측 절점 순서로 클릭합니다 · Esc/우클릭 종료',
+  manhole: '지도를 클릭해 맨홀을 추가합니다. 지반고는 가까운 절점 값(없으면 0), 관저고는 지반고 − 1.8 m 로 임시로 둡니다.',
+  outfall: '지도를 클릭해 방류구(하류 끝)를 추가합니다.',
+  conduit: '상류 맨홀 → 하류 맨홀(또는 방류구) 순서로 클릭합니다. 빈 곳을 클릭하면 그 자리에 맨홀을 만듭니다 · 이어 그리기 · Esc/우클릭 종료',
 };
+
+const EMPTY_SEWER_DATA: SewerMapData = { nodes: [], conduits: [] };
+
+/** 하수 모드 범례: 관거 = 설계 판정, 맨홀 = SWMM 해석 결과. */
+function SewerLegend() {
+  const hasDesign = useSewerStore((s) => s.design !== null);
+  const hasSimulation = useSewerStore((s) => s.simulation !== null);
+  const item = (color: [number, number, number], label: string, round = false) => (
+    <li key={label} className="flex items-center gap-2">
+      <span className={round ? 'h-2.5 w-2.5 rounded-full' : 'h-1 w-5 rounded'} style={{ background: toCss(color) }} />
+      {label}
+    </li>
+  );
+  return (
+    <div className="pointer-events-none absolute bottom-10 left-3 z-10 rounded-md border border-line bg-panel/95 px-3 py-2 text-[11px] text-ink-soft shadow-lg">
+      <p className="mb-1 font-semibold text-ink">하수 관망</p>
+      <ul className="space-y-0.5">
+        {hasDesign ? [item(SEWER_COLORS.ok, '관거: 설계 적합'), item(SEWER_COLORS.violation, '관거: 제약 위반')] : [item(SEWER_COLORS.neutral, '관거 (설계 전)')]}
+        {hasSimulation
+          ? [item(SEWER_COLORS.ok, '맨홀: 정상', true), item(SEWER_COLORS.surcharged, '맨홀: 만관 초과', true), item(SEWER_COLORS.violation, '맨홀: 월류', true)]
+          : [item(SEWER_COLORS.manhole, '맨홀', true)]}
+        {item([236, 131, 90], '방류구 (▼)', true)}
+      </ul>
+      <p className="mt-1 text-ink-muted">굵기 = 관경 · 화살표 = 흐름 방향</p>
+    </div>
+  );
+}
 
 function selectionAsSet(selection: Selection): ObjectSet | null {
   if (!selection) return null;
@@ -63,8 +98,13 @@ function DeckOverlay({ onReady, ...props }: MapboxOverlayProps & { onReady: (ove
 
 function CursorReadout({ zoom }: { zoom: number }) {
   const cursor = useUIStore((s) => s.cursor);
-  const nodeCount = useNetworkStore((s) => Object.keys(s.model.nodes).length);
-  const linkCount = useNetworkStore((s) => Object.keys(s.model.links).length);
+  const sewer = useUIStore((s) => s.domain === 'sewer');
+  const waterNodes = useNetworkStore((s) => Object.keys(s.model.nodes).length);
+  const waterLinks = useNetworkStore((s) => Object.keys(s.model.links).length);
+  const sewerNodes = useSewerStore((s) => s.project.nodes.length);
+  const sewerLinks = useSewerStore((s) => s.project.conduits.length);
+  const nodeCount = sewer ? sewerNodes : waterNodes;
+  const linkCount = sewer ? sewerLinks : waterLinks;
   let tm = '';
   if (cursor && cursor[0] > 122 && cursor[0] < 134 && cursor[1] > 31 && cursor[1] < 45) {
     const [x, y] = wgs84ToEpsg('EPSG:5186', cursor);
@@ -84,7 +124,7 @@ function CursorReadout({ zoom }: { zoom: number }) {
         </span>
       )}
       <span className="ml-auto">
-        <span className="text-ink-muted">절점</span> {nodeCount.toLocaleString()} · <span className="text-ink-muted">링크</span>{' '}
+        <span className="text-ink-muted">{sewer ? '맨홀·방류구' : '절점'}</span> {nodeCount.toLocaleString()} · <span className="text-ink-muted">{sewer ? '관거' : '링크'}</span>{' '}
         {linkCount.toLocaleString()}
       </span>
       <span>
@@ -141,6 +181,20 @@ export function GisMapCanvas() {
   const swmmThematic = useSwmmThematic();
   const swmmActive = swmmProject !== null;
 
+  // 하수 모드: useSewerStore 의 프로젝트를 상수 관망 대신 그린다 (읽기 전용 SWMM 보기가 열려 있으면 그쪽이 우선).
+  const sewerActive = useUIStore((s) => s.domain === 'sewer') && !swmmActive;
+  const sewerProject = useSewerStore((s) => s.project);
+  const sewerDesign = useSewerStore((s) => s.design);
+  const sewerSimulation = useSewerStore((s) => s.simulation);
+  const sewerSelection = useSewerStore((s) => s.selection);
+  const sewerDrawStart = useUIStore((s) => s.sewerDrawStart);
+  const sewerCursor = useUIStore((s) => (s.sewerDrawStart ? s.cursor : null));
+  const sewerData = useMemo(() => (sewerActive ? sewerMapData(sewerProject) : EMPTY_SEWER_DATA), [sewerActive, sewerProject]);
+  const sewerDataRef = useRef(sewerData);
+  useEffect(() => {
+    sewerDataRef.current = sewerData;
+  }, [sewerData]);
+
   const basemapDim = useUIStore((s) => s.basemapDim);
   const basemapGray = useUIStore((s) => s.basemapGray);
   const mapStyle = useMemo(() => buildMapStyle(basemap, vworldKey, basemapDim, basemapGray), [basemap, vworldKey, basemapDim, basemapGray]);
@@ -167,12 +221,31 @@ export function GisMapCanvas() {
   const styleKey = `${revision}:${resultsRevision}:${stepIndex}:${nodeTheme}:${linkTheme}`;
   const swmmStyleKey = `${swmmRun ? 'r' : 'n'}:${swmmPeriod}:${swmmThematic?.nodeScale?.title}:${swmmThematic?.linkScale?.title}:${swmmProject?.nodes.length}`;
   const draftLayers = useMemo(() => buildDraftLayers(draftCustomers, draftResult, draftSource, deckEpoch), [draftCustomers, draftResult, draftSource, deckEpoch]);
+  const sewerLayers = useMemo(
+    () =>
+      deckEpoch >= 0 && sewerActive
+        ? buildSewerLayers({
+            data: sewerData,
+            design: sewerDesign,
+            simulation: sewerSimulation,
+            selection: sewerSelection,
+            drawStart: sewerDrawStart,
+            cursor: sewerCursor,
+            zoom,
+            // sewerData 는 편집마다 새 객체이므로(데이터 자체가 바뀜) 키에는 결과 상태만 넣는다
+            styleKey: `${sewerDesign ? 'd' : 'n'}:${sewerSimulation ? 's' : 'n'}:${sewerData.nodes.length}:${sewerData.conduits.length}`,
+          })
+        : null,
+    [sewerActive, sewerData, sewerDesign, sewerSimulation, sewerSelection, sewerDrawStart, sewerCursor, zoom, deckEpoch],
+  );
   const baseLayers = useMemo(
     () =>
       // deckEpoch: 끊긴 컨텍스트에 묶인 레이어 상태를 버리고 새 오버레이에서 처음부터 초기화하도록 매번 새 인스턴스를 만든다.
       deckEpoch >= 0 && swmmProject && swmmThematic
         ? buildSwmmLayers({ project: swmmProject, thematic: swmmThematic, styleKey: swmmStyleKey, selection: swmmSelection, zoom, hasResults: swmmRun !== null })
-        : buildNetworkLayers({
+        : sewerLayers
+          ? sewerLayers
+          : buildNetworkLayers({
         junctions,
         sources,
         links: linkData,
@@ -190,7 +263,7 @@ export function GisMapCanvas() {
       }),
     [
       junctions, sources, linkData, nodes, thematic, results, styleKey, layerVisibility, selection, highlight, multiSelection, profile, zoom, usUnits,
-      swmmProject, swmmThematic, swmmStyleKey, swmmSelection, swmmRun, deckEpoch,
+      swmmProject, swmmThematic, swmmStyleKey, swmmSelection, swmmRun, deckEpoch, sewerLayers,
     ],
   );
   const deckLayers = useMemo(() => (draftLayers.length > 0 ? [...baseLayers, ...draftLayers] : baseLayers), [baseLayers, draftLayers]);
@@ -242,17 +315,44 @@ export function GisMapCanvas() {
     [pickNode],
   );
 
+  /** 하수 모드 절점 찾기: GPU 픽킹 → 놓치면 화면 거리 (방금 추가한 맨홀 위에 또 만들지 않게). */
+  const pickSewerNode = useCallback(
+    (point: { x: number; y: number }): SewerNode | null => {
+      const picked = (pick(point, [SEWER_NODE_LAYER], 10)?.object as SewerNodeDatum | undefined)?.node;
+      if (picked) return picked;
+      const map = mapRef.current;
+      if (!map) return null;
+      let best: SewerNode | null = null;
+      let bestDistance = 9;
+      for (const datum of sewerDataRef.current.nodes) {
+        const projected = map.project(datum.position);
+        const distance = Math.hypot(projected.x - point.x, projected.y - point.y);
+        if (distance <= bestDistance) {
+          best = datum.node;
+          bestDistance = distance;
+        }
+      }
+      return best;
+    },
+    [pick],
+  );
+  const pickSewerConduit = useCallback(
+    (point: { x: number; y: number }) => (pick(point, [SEWER_CONDUIT_LAYER], 6)?.object as SewerConduitDatum | undefined)?.conduit ?? null,
+    [pick],
+  );
+
   /* ---------------------------------------------------------------- 커서 좌표 (rAF 로 묶어서 갱신) */
 
   const pendingCursor = useRef<{ lngLat: LngLat; snap: string | null } | null>(null);
-  const pendingMove = useRef<{ id: string; lngLat: LngLat } | null>(null);
+  const pendingMove = useRef<{ id: string; lngLat: LngLat; sewer: boolean } | null>(null);
   const frame = useRef(0);
   const flush = useCallback(() => {
     frame.current = 0;
     const move = pendingMove.current;
     if (move) {
       pendingMove.current = null;
-      useNetworkStore.getState().moveNode(move.id, move.lngLat, `drag:${move.id}`);
+      if (move.sewer) useSewerStore.getState().edit((d) => void moveSewerNode(d, move.id, move.lngLat), `drag:${move.id}`);
+      else useNetworkStore.getState().moveNode(move.id, move.lngLat, `drag:${move.id}`);
     }
     const cursor = pendingCursor.current;
     if (cursor) {
@@ -267,7 +367,7 @@ export function GisMapCanvas() {
 
   /* ---------------------------------------------------------------- 절점 드래그 이동 */
 
-  const drag = useRef<{ id: string; x: number; y: number; moved: boolean } | null>(null);
+  const drag = useRef<{ id: string; x: number; y: number; moved: boolean; sewer: boolean } | null>(null);
   const suppressClick = useRef(false);
 
   const endDrag = useCallback(() => {
@@ -280,7 +380,8 @@ export function GisMapCanvas() {
         cancelAnimationFrame(frame.current);
         flush();
       }
-      useNetworkStore.getState().sealHistory();
+      if (current.sewer) useSewerStore.getState().sealHistory();
+      else useNetworkStore.getState().sealHistory();
       suppressClick.current = true;
     }
   }, [flush]);
@@ -296,15 +397,25 @@ export function GisMapCanvas() {
       const original = event.originalEvent;
       if (useSwmmStore.getState().project) return; // SWMM 보기는 읽기 전용: 절점 끌어 이동 없음
       if (original.button !== 0 || useUIStore.getState().tool !== 'select') return;
+      if (useUIStore.getState().domain === 'sewer') {
+        if (useUIStore.getState().pointPick) return;
+        const manhole = pickSewerNode(event.point);
+        if (!manhole) return;
+        event.preventDefault();
+        drag.current = { id: manhole.id, x: event.point.x, y: event.point.y, moved: false, sewer: true };
+        setDragging(true);
+        useSewerStore.getState().select({ kind: 'node', id: manhole.id });
+        return;
+      }
       if (original.ctrlKey || original.metaKey || original.shiftKey) return; // 다중 선택 클릭
       const node = pickNodeForClick(event.point);
       if (!node) return;
       event.preventDefault(); // 지도 끌기(dragPan) 대신 절점 이동
-      drag.current = { id: node.id, x: event.point.x, y: event.point.y, moved: false };
+      drag.current = { id: node.id, x: event.point.x, y: event.point.y, moved: false, sewer: false };
       setDragging(true);
       useUIStore.getState().select({ kind: 'node', id: node.id });
     },
-    [pickNodeForClick],
+    [pickNodeForClick, pickSewerNode],
   );
 
   const onMouseMove = useCallback(
@@ -314,13 +425,13 @@ export function GisMapCanvas() {
       if (current) {
         if (!current.moved && Math.hypot(event.point.x - current.x, event.point.y - current.y) < 4) return;
         current.moved = true;
-        pendingMove.current = { id: current.id, lngLat };
+        pendingMove.current = { id: current.id, lngLat, sewer: current.sewer };
         pendingCursor.current = { lngLat, snap: null };
         schedule();
         return;
       }
       const activeTool = useUIStore.getState().tool;
-      const snap = activeTool !== 'select' && activeTool !== 'area' ? (pickNode(event.point)?.id ?? null) : null;
+      const snap = activeTool !== 'select' && activeTool !== 'area' && !SEWER_TOOLS.has(activeTool) ? (pickNode(event.point)?.id ?? null) : null;
       pendingCursor.current = { lngLat, snap };
       schedule();
     },
@@ -380,6 +491,55 @@ export function GisMapCanvas() {
       const net = useNetworkStore.getState();
       const lngLat: LngLat = [event.lngLat.lng, event.lngLat.lat];
       const activeTool = ui.tool;
+
+      if (ui.domain === 'sewer') {
+        const sewer = useSewerStore.getState();
+        const node = pickSewerNode(event.point);
+        if (activeTool === 'manhole' || activeTool === 'outfall') {
+          if (node) return sewer.select({ kind: 'node', id: node.id });
+          let id = '';
+          sewer.edit((d) => void (id = addSewerNode(d, activeTool === 'outfall' ? 'OUTFALL' : 'JUNCTION', lngLat)));
+          sewer.select({ kind: 'node', id });
+          return;
+        }
+        if (activeTool === 'conduit') {
+          const start = ui.sewerDrawStart;
+          if (!start) {
+            if (node?.kind === 'OUTFALL') {
+              ui.pushToast({ level: 'info', title: '상류 맨홀부터 클릭하세요', message: '방류구는 하류 끝입니다.' });
+              return;
+            }
+            let id = node?.id ?? '';
+            if (!node) sewer.edit((d) => void (id = addSewerNode(d, 'JUNCTION', lngLat)));
+            ui.setSewerDrawStart(id);
+            sewer.select({ kind: 'node', id });
+            return;
+          }
+          if (node) {
+            const problem = conduitProblem(sewer.project, start, node.id);
+            if (problem) {
+              ui.pushToast({ level: 'warning', title: '관거를 이을 수 없습니다', message: problem });
+              return;
+            }
+          }
+          // 빈 곳이면 맨홀을 만들고 잇는다 (실행 취소 한 단계)
+          let endId = node?.id ?? '';
+          let conduitId: string | null = null;
+          sewer.edit((d) => {
+            if (!node) endId = addSewerNode(d, 'JUNCTION', lngLat);
+            conduitId = addSewerConduit(d, start, endId);
+          });
+          if (conduitId) sewer.select({ kind: 'conduit', id: conduitId });
+          // 이어 그리기: 방류구에 닿으면 끝낸다
+          ui.setSewerDrawStart(node?.kind === 'OUTFALL' ? null : endId);
+          return;
+        }
+        // 선택 도구
+        if (node) return sewer.select({ kind: 'node', id: node.id });
+        const conduit = pickSewerConduit(event.point);
+        sewer.select(conduit ? { kind: 'conduit', id: conduit.id } : null);
+        return;
+      }
 
       if (activeTool === 'select') {
         const node = pickNodeForClick(event.point);
@@ -461,7 +621,7 @@ export function GisMapCanvas() {
         ui.setDrawing({ ...drawing, vertices: [...drawing.vertices, lngLat] });
       }
     },
-    [pickNodeForClick, pickLink, finishLink, finishArea],
+    [pickNodeForClick, pickLink, finishLink, finishArea, pickSewerNode, pickSewerConduit],
   );
 
   const onDblClick = useCallback(
@@ -502,7 +662,11 @@ export function GisMapCanvas() {
 
   const onContextMenu = useCallback((event: MapLayerMouseEvent) => {
     const ui = useUIStore.getState();
-    if (ui.drawing) {
+    if (ui.sewerDrawStart) {
+      event.preventDefault();
+      event.originalEvent.preventDefault();
+      ui.setSewerDrawStart(null);
+    } else if (ui.drawing) {
       event.preventDefault();
       event.originalEvent.preventDefault();
       ui.setDrawing(null);
@@ -546,7 +710,19 @@ export function GisMapCanvas() {
     (info: PickingInfo) => {
       if (!info.object || !info.layer) return null;
       const lines: string[] = [];
-      if (info.layer.id.startsWith('swmm-')) {
+      if (info.layer.id === SEWER_NODE_LAYER) {
+        const { node } = info.object as SewerNodeDatum;
+        lines.push(`${node.kind === 'OUTFALL' ? '방류구' : '맨홀'} ${node.id}`);
+        lines.push(`지반고 ${formatNumber(node.ground, 2)} m · 관저고 ${formatNumber(node.invert, 2)} m`);
+      } else if (info.layer.id === SEWER_CONDUIT_LAYER) {
+        const { conduit } = info.object as SewerConduitDatum;
+        const row = useSewerStore.getState().design?.rows.find((r) => r.id === conduit.id);
+        lines.push(`관거 ${conduit.id} (${conduit.upstream} → ${conduit.downstream})`);
+        lines.push(`Ø${formatNumber((row?.diameter ?? conduit.diameter) * 1000, 0)} mm · ${formatNumber(conduit.length, 1)} m`);
+        if (row) lines.push(`유속 ${row.velocity.toFixed(2)} m/s · d/D ${row.depth_ratio.toFixed(2)} · ${row.status}`);
+      } else if (info.layer.id.startsWith('sewer-')) {
+        return null;
+      } else if (info.layer.id.startsWith('swmm-')) {
         const o = info.object as { id?: string; link?: { id: string; kind: string } };
         if (info.layer.id === 'swmm-links' && o.link) lines.push(`${o.link.kind === 'conduit' ? '관거' : '링크'} ${o.link.id}`);
         else if (info.layer.id === 'swmm-subs') lines.push(`유역 ${o.id}`);
@@ -645,7 +821,7 @@ export function GisMapCanvas() {
           {hint}
         </div>
       )}
-      {swmmActive ? <SwmmLegend /> : <ColorRampLegend />}
+      {swmmActive ? <SwmmLegend /> : sewerActive ? <SewerLegend /> : <ColorRampLegend />}
       <CursorReadout zoom={zoom} />
     </div>
   );

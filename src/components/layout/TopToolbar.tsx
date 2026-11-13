@@ -1,6 +1,14 @@
 import {
+  ArrowDownToLine,
   BookOpen,
   CloudRain,
+  Disc,
+  Droplets,
+  FileInput,
+  RefreshCw,
+  Save,
+  SlidersHorizontal,
+  TrendingDown,
   LayoutGrid,
   Users,
   Wrench,
@@ -48,10 +56,23 @@ import {
   runNetworkValidation,
   runSimulation,
 } from '../../app/actions';
+import { applyDesignToProject, exportSewerCsv, exportSewerInp, openSewerFile, saveSewerProject } from '../../app/sewerActions';
+import {
+  correctSewerGround,
+  deleteSewerSelection,
+  fitToSewer,
+  importSwmmFileAsSewer,
+  loadSewerDemo,
+  newSewerProject,
+  runSewerFromMap,
+  switchDomain,
+} from '../../app/sewerMapActions';
 import { APP_NAME, SAMPLES } from '../../config';
+import { useSewerStore } from '../../store/useSewerStore';
+import { useSwmmStore } from '../../store/useSwmmStore';
 import { useNetworkStore } from '../../store/useNetworkStore';
 import { useSimulationStore } from '../../store/useSimulationStore';
-import { useUIStore, type Tool } from '../../store/useUIStore';
+import { useUIStore, type Domain, type Tool } from '../../store/useUIStore';
 import { useValidationStore } from '../../store/useValidationStore';
 
 const TOOLS: { tool: Tool; label: string; shortcut: string; icon: LucideIcon }[] = [
@@ -65,6 +86,44 @@ const TOOLS: { tool: Tool; label: string; shortcut: string; icon: LucideIcon }[]
   { tool: 'pump', label: '펌프', shortcut: 'U', icon: Fan },
   { tool: 'valve', label: '밸브', shortcut: 'L', icon: GitCommitHorizontal },
 ];
+
+/** 하수 모드 편집 도구 (단축키는 App.tsx 의 SEWER_TOOL_KEYS 와 맞춘다). */
+const SEWER_TOOL_LIST: typeof TOOLS = [
+  { tool: 'select', label: '선택·이동', shortcut: 'V', icon: MousePointer2 },
+  { tool: 'manhole', label: '맨홀', shortcut: 'M', icon: Disc },
+  { tool: 'outfall', label: '방류구', shortcut: 'O', icon: ArrowDownToLine },
+  { tool: 'conduit', label: '관거', shortcut: 'C', icon: TrendingDown },
+];
+
+const DOMAINS: { id: Domain; label: string; icon: LucideIcon; title: string }[] = [
+  { id: 'water', label: '상수', icon: Droplets, title: '상수관망 (EPANET) 작도·해석' },
+  { id: 'sewer', label: '하수', icon: Waves, title: '하수관망 작도·자동 설계·SWMM 해석' },
+];
+
+/** 작업 영역 전환: 상수 | 하수. 같은 지도·같은 화면에서 도구·메뉴·패널만 바뀐다. */
+function DomainToggle() {
+  const domain = useUIStore((s) => s.domain);
+  return (
+    <div className="mr-1 inline-flex h-7 shrink-0 overflow-hidden rounded border border-line" role="radiogroup" aria-label="작업 영역">
+      {DOMAINS.map(({ id, label, icon: Icon, title }) => (
+        <button
+          key={id}
+          type="button"
+          role="radio"
+          aria-checked={domain === id}
+          title={title}
+          onClick={() => switchDomain(id)}
+          className={`inline-flex items-center gap-1 px-2.5 text-xs font-medium transition-colors ${
+            domain === id ? 'bg-accent-strong text-white' : 'bg-raised text-ink-soft hover:text-ink'
+          }`}
+        >
+          <Icon size={13} strokeWidth={2} />
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function ToolbarButton({
   icon: Icon,
@@ -155,33 +214,117 @@ function MenuItem({ icon: Icon, label, hint, onClick }: { icon: LucideIcon; labe
 /** 상단 툴바: 파일 입출력, 편집 도구, 실행 취소, 관망 검증, 해석 실행. */
 export function TopToolbar() {
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const sewerFileInput = useRef<HTMLInputElement | null>(null);
+  const swmmImportInput = useRef<HTMLInputElement | null>(null);
+  const sewer = useUIStore((s) => s.domain === 'sewer');
+  const swmmViewer = useSwmmStore((s) => s.project !== null);
+  const sewerSelected = useSewerStore((s) => s.selection !== null);
+  const sewerCanUndo = useSewerStore((s) => s.past.length > 0);
+  const sewerCanRedo = useSewerStore((s) => s.future.length > 0);
+  const sewerName = useSewerStore((s) => s.project.name);
+  const sewerBusy = useSewerStore((s) => s.busy);
+  const sewerHasDesign = useSewerStore((s) => s.design !== null);
   const tool = useUIStore((s) => s.tool);
   const setTool = useUIStore((s) => s.setTool);
   const openModal = useUIStore((s) => s.openModal);
-  const hasSelection = useUIStore((s) => s.selection !== null || s.multiSelection !== null);
-  const canUndo = useNetworkStore((s) => s.past.length > 0);
-  const canRedo = useNetworkStore((s) => s.future.length > 0);
-  const undo = useNetworkStore((s) => s.undo);
-  const redo = useNetworkStore((s) => s.redo);
-  const fileName = useNetworkStore((s) => s.fileName);
-  const title = useNetworkStore((s) => s.model.title[0]);
+  const waterSelected = useUIStore((s) => s.selection !== null || s.multiSelection !== null);
+  const waterCanUndo = useNetworkStore((s) => s.past.length > 0);
+  const waterCanRedo = useNetworkStore((s) => s.future.length > 0);
+  const waterFileName = useNetworkStore((s) => s.fileName);
+  const waterTitle = useNetworkStore((s) => s.model.title[0]);
+  // 하수 모드에서는 실행 취소·삭제·전체 보기·해석 실행이 하수 프로젝트(useSewerStore)에 작용한다.
+  const hasSelection = sewer ? sewerSelected : waterSelected;
+  const canUndo = sewer ? sewerCanUndo : waterCanUndo;
+  const canRedo = sewer ? sewerCanRedo : waterCanRedo;
+  const undo = () => (sewer ? useSewerStore.getState().undo() : useNetworkStore.getState().undo());
+  const redo = () => (sewer ? useSewerStore.getState().redo() : useNetworkStore.getState().redo());
+  const fileName = sewer ? sewerName : waterFileName;
+  const title = sewer ? sewerName : waterTitle;
   const simStatus = useSimulationStore((s) => s.status);
   const progress = useSimulationStore((s) => s.progress);
   const validating = useValidationStore((s) => s.status === 'running');
-  const running = simStatus === 'running';
+  const running = sewer && !swmmViewer ? sewerBusy !== null : simStatus === 'running';
+  const tools = sewer ? SEWER_TOOL_LIST : TOOLS;
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-1 border-b border-line bg-panel px-3">
       <div className="mr-2 flex items-baseline gap-2">
         <span className="text-sm font-semibold tracking-tight text-ink">{APP_NAME}</span>
-        <span className="hidden max-w-48 truncate text-[11px] text-ink-muted xl:inline" title={fileName ?? title}>
-          {fileName ?? title ?? ''}
-        </span>
       </div>
+      <DomainToggle />
+      <span className="hidden max-w-40 truncate text-[11px] text-ink-muted xl:inline" title={fileName ?? title}>
+        {fileName ?? title ?? ''}
+      </span>
       <Divider />
 
       <Menu label="파일" icon={FolderOpen}>
-        {(close) => (
+        {(close) =>
+          sewer ? (
+            <>
+              <MenuItem
+                icon={FilePlus}
+                label="새 하수 관망 (빈 관망)"
+                onClick={() => {
+                  close();
+                  newSewerProject();
+                }}
+              />
+              <MenuItem
+                icon={FolderOpen}
+                label="하수 프로젝트 열기 (.json)"
+                onClick={() => {
+                  close();
+                  sewerFileInput.current?.click();
+                }}
+              />
+              <MenuItem
+                icon={FileInput}
+                label="SWMM .inp → 편집 가능한 하수 관망으로 가져오기"
+                onClick={() => {
+                  close();
+                  swmmImportInput.current?.click();
+                }}
+              />
+              <div className="my-1 border-t border-line" />
+              <MenuItem
+                icon={Save}
+                label="하수 프로젝트 저장 (.json)"
+                hint="Ctrl+S"
+                onClick={() => {
+                  close();
+                  saveSewerProject();
+                }}
+              />
+              <MenuItem
+                icon={Download}
+                label="SWMM .inp 내보내기 (설계 결과 기준)"
+                onClick={() => {
+                  close();
+                  exportSewerInp();
+                }}
+              />
+              {sewerHasDesign && (
+                <MenuItem
+                  icon={Download}
+                  label="설계 결과 CSV"
+                  onClick={() => {
+                    close();
+                    exportSewerCsv();
+                  }}
+                />
+              )}
+              <div className="my-1 border-t border-line" />
+              <div className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">예제</div>
+              <MenuItem
+                icon={Spline}
+                label="분기형 우·오수 관망 예제"
+                onClick={() => {
+                  close();
+                  loadSewerDemo();
+                }}
+              />
+            </>
+          ) : (
           <>
             <MenuItem
               icon={FilePlus}
@@ -264,7 +407,8 @@ export function TopToolbar() {
               />
             ))}
           </>
-        )}
+          )
+        }
       </Menu>
       <Menu label="데이터" icon={ChartSpline}>
         {(close) => {
@@ -284,6 +428,21 @@ export function TopToolbar() {
               {head('공통 · 관망 만들기')}
               {item(Users, '수용가 자료로 관망 초안 만들기 (상수·하수)', () => openModal('draft'))}
               <div className="my-1 border-t border-line" />
+              {sewer ? (
+                <>
+                  {head('우수 · 하수')}
+                  {item(SlidersHorizontal, '설계 조건 · 일괄 표 편집 (유역·강우 포함)', () => openModal('sewer'))}
+                  {item(FileInput, 'SWMM .inp → 편집 가능한 하수 관망으로 가져오기', () => swmmImportInput.current?.click())}
+                  {item(Mountain, '지반고 보정 — 지형 타일 (매설 깊이 유지)', () => void correctSewerGround(true))}
+                  {item(Mountain, '지반고 보정 — 지형 타일 (지반고만)', () => void correctSewerGround(false))}
+                  {item(RefreshCw, '설계 결과를 관망에 반영', applyDesignToProject)}
+                  <div className="my-1 border-t border-line" />
+                  {head('읽기 전용 SWMM 보기')}
+                  {item(FolderOpen, 'SWMM .inp 열기 → 해석 · 하수 검토', () => fileInput.current?.click())}
+                  {item(CloudRain, '우수관망 예제로 해보기', () => void loadSample('sample-sewer.inp'))}
+                </>
+              ) : (
+                <>
               {head('상수 (EPANET)')}
               {item(Settings2, '해석 옵션 · 수요 패턴 · 수질', () => openModal('simulation'))}
               {item(ChartSpline, '펌프·배수지 곡선', () => openModal('curves'))}
@@ -297,6 +456,8 @@ export function TopToolbar() {
               {item(FolderOpen, 'SWMM .inp 열기 → 해석 · 하수 검토', () => fileInput.current?.click())}
               {item(CloudRain, '우수관망 예제로 해보기', () => void loadSample('sample-sewer.inp'))}
               {item(Waves, '하수관 자동 설계 (우·오수)', () => openModal('sewer'))}
+                </>
+              )}
             </>
           );
         }}
@@ -314,10 +475,32 @@ export function TopToolbar() {
           if (files.length > 0) void importFiles(files);
         }}
       />
+      <input
+        ref={sewerFileInput}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) void openSewerFile(file).then(fitToSewer);
+        }}
+      />
+      <input
+        ref={swmmImportInput}
+        type="file"
+        accept=".inp"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (file) void importSwmmFileAsSewer(file);
+        }}
+      />
       <Divider />
 
-      <div className="flex items-center gap-0.5" role="toolbar" aria-label="편집 도구">
-        {TOOLS.map(({ tool: id, label, shortcut, icon }) => (
+      <div className="flex items-center gap-0.5" role="toolbar" aria-label={sewer ? '하수 편집 도구' : '편집 도구'}>
+        {tools.map(({ tool: id, label, shortcut, icon }) => (
           <ToolbarButton
             key={id}
             icon={icon}
@@ -325,6 +508,7 @@ export function TopToolbar() {
             title={`${label} (${shortcut})`}
             active={tool === id}
             showLabel="wide"
+            disabled={sewer && swmmViewer}
             onClick={() => setTool(id)}
           />
         ))}
@@ -333,29 +517,35 @@ export function TopToolbar() {
 
       <ToolbarButton icon={Undo2} label="실행 취소" title="실행 취소 (Ctrl+Z)" disabled={!canUndo} onClick={undo} />
       <ToolbarButton icon={Redo2} label="다시 실행" title="다시 실행 (Ctrl+Y)" disabled={!canRedo} onClick={redo} />
-      <ToolbarButton icon={Trash} label="선택 삭제" title="선택 객체 삭제 (Delete)" disabled={!hasSelection} onClick={deleteSelection} />
-      <ToolbarButton icon={Maximize} label="전체 보기" title="관망 전체 보기 (F)" onClick={fitToNetwork} />
+      <ToolbarButton icon={Trash} label="선택 삭제" title="선택 객체 삭제 (Delete)" disabled={!hasSelection} onClick={sewer ? deleteSewerSelection : deleteSelection} />
+      <ToolbarButton icon={Maximize} label="전체 보기" title="관망 전체 보기 (F)" onClick={sewer ? fitToSewer : fitToNetwork} />
 
       <div className="ml-auto flex items-center gap-1.5">
-        <ToolbarButton
-          icon={validating ? LoaderCircle : ShieldCheck}
-          label="관망 검증"
-          showLabel
-          disabled={validating}
-          onClick={() => void runNetworkValidation()}
-        />
-        <ToolbarButton icon={Settings2} label="해석 옵션" showLabel onClick={() => openModal('simulation')} />
+        {sewer ? (
+          <ToolbarButton icon={SlidersHorizontal} label="설계 조건" title="설계 조건 · 일괄 표 편집" showLabel onClick={() => openModal('sewer')} />
+        ) : (
+          <>
+            <ToolbarButton
+              icon={validating ? LoaderCircle : ShieldCheck}
+              label="관망 검증"
+              showLabel
+              disabled={validating}
+              onClick={() => void runNetworkValidation()}
+            />
+            <ToolbarButton icon={Settings2} label="해석 옵션" showLabel onClick={() => openModal('simulation')} />
+          </>
+        )}
         <ToolbarButton icon={BookOpen} label="사용 설명서" title="사용 설명서 (새 탭)" onClick={() => window.open(`${import.meta.env.BASE_URL}manual.html`, '_blank', 'noopener')} />
         <button
           type="button"
           disabled={running}
-          onClick={() => void runSimulation()}
-          title="수리해석 실행 (F5)"
+          onClick={() => void (sewer && !swmmViewer ? runSewerFromMap() : runSimulation())}
+          title={sewer && !swmmViewer ? '자동 설계 → SWMM 해석 (F5)' : '수리해석 실행 (F5)'}
           className="relative inline-flex h-8 items-center gap-1.5 overflow-hidden rounded bg-accent-strong px-3 text-xs font-semibold text-white transition-colors hover:bg-accent disabled:cursor-wait disabled:opacity-80"
         >
-          {running && <span className="absolute inset-y-0 left-0 bg-white/20" style={{ width: `${Math.round(progress * 100)}%` }} />}
+          {running && !sewer && <span className="absolute inset-y-0 left-0 bg-white/20" style={{ width: `${Math.round(progress * 100)}%` }} />}
           {running ? <LoaderCircle size={15} className="relative animate-spin" /> : <Play size={15} className="relative" />}
-          <span className="relative whitespace-nowrap">{running ? '해석 중…' : '해석 실행'}</span>
+          <span className="relative whitespace-nowrap">{running ? '해석 중…' : sewer && !swmmViewer ? '설계·해석 실행' : '해석 실행'}</span>
         </button>
       </div>
     </header>

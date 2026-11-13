@@ -14,6 +14,7 @@ import { mergeNearbyNodes, mergeSeriesPipes, renumber, type RenumberOptions } fr
 import type { LngLat, SourceCrs } from '../core/model/types';
 import { parcelsOf, useDraftStore } from '../store/useDraftStore';
 import { useNetworkStore } from '../store/useNetworkStore';
+import { nodePositions } from '../core/sewer/mapFrame';
 import { fitOutfallInverts } from '../core/sewer/outfall';
 import { useSewerStore } from '../store/useSewerStore';
 import { useUIStore } from '../store/useUIStore';
@@ -196,9 +197,24 @@ export function sendSewerDraft(): void {
   // 방류구 깊이를 설계에 맞춘다 (얕게 고정하면 마지막 관이 역경사·만관이 된다)
   const { project } = fitOutfallInverts(draft, useSewerStore.getState().designMode, useSewerStore.getState().designRules);
   useSewerStore.getState().setProject(project);
+  useSewerStore.getState().select(null);
   s.set({ overlay: false });
-  useUIStore.getState().openModal('sewer');
-  useUIStore.getState().pushToast({
+  const ui = useUIStore.getState();
+  if (ui.domain === 'sewer') {
+    // 하수 모드: 대화상자 대신 지도에 편집 가능한 관망으로 올린다
+    ui.openModal(null);
+    ui.setTool('select');
+    const box = bboxOf(nodePositions(project).values());
+    if (box) ui.fitBounds(box);
+    ui.pushToast({
+      level: 'success',
+      title: '하수 관망 초안을 지도에 올렸습니다',
+      message: `맨홀 ${project.nodes.length - 1}개 · 관로 ${project.conduits.length}개. 지도에서 고치고 ‘설계·해석 실행’(F5)을 누르세요. Ctrl+Z 로 이전 관망으로 되돌릴 수 있습니다.`,
+    });
+    return;
+  }
+  ui.openModal('sewer');
+  ui.pushToast({
     level: 'success',
     title: '하수 설계로 보냈습니다',
     message: `맨홀 ${project.nodes.length - 1}개 · 관로 ${project.conduits.length}개. ‘설계 결과’ 탭에서 ① 자동 설계를 누르세요.`,
