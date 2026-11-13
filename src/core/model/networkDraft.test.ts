@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { guessMapping, parseCsv, readCustomers } from '../io/customerCsv';
 import { parseSewerProject } from '../sewer/validate';
 import { designSewer } from '../sewer/design';
+import { generateInp } from '../sewer/inp';
+import { runSwmm } from '../swmm/swmmRunner';
 import { DEFAULT_SEWER_DRAFT, DEFAULT_WATER_DRAFT, draftToSewerProject, draftToWaterModel, pickWaterDiameter } from './draftConvert';
 import { buildDraft, defaultDraftOptions, prepareRoads } from './networkDraft';
 import { plane } from './roadSnap';
@@ -113,6 +115,22 @@ describe('network draft', () => {
     expect(Math.max(...practical.project.conduits.map((c) => c.diameter))).toBe(sewer.constraints.diameters[0]);
     expect(Math.max(...design.project.conduits.map((c) => c.diameter))).toBeGreaterThan(sewer.constraints.diameters[0]);
     expect(practical.rows.every((r) => r.status === '적합' || r.status.includes('유속'))).toBe(true);
+  });
+
+  it('gives a mid-network outfall a single inlet so SWMM accepts it', async () => {
+    // 방류구를 격자 한가운데(100,100)에 두면 여러 가지가 모인다 → 집수 맨홀 + 방류 관 하나
+    const opts = defaultDraftOptions('sewer', at(100, 100));
+    const prepared = prepareRoads(grid(), origin, opts.spacing);
+    const ground = prepared.vertices.map((p) => 50 + Math.hypot(P.to(p)[0] - 100, P.to(p)[1] - 100) * 0.02);
+    const corners = [at(0, 0), at(200, 0), at(0, 200), at(200, 200)].map((position, i) => ({ id: `C${i}`, position, demand: 5 }));
+    const draft = buildDraft(prepared, corners, opts, ground);
+    expect(draft.links.filter((l) => draft.nodes[l.to].isSource).length).toBeGreaterThan(1);
+    const project = parseSewerProject(JSON.parse(JSON.stringify(draftToSewerProject(draft, DEFAULT_SEWER_DRAFT, 'mid'))));
+    const outfall = project.nodes.find((n) => n.kind === 'OUTFALL')!;
+    expect(project.conduits.filter((c) => c.downstream === outfall.id)).toHaveLength(1);
+    const design = designSewer(project, {}, 'practical');
+    const run = await runSwmm(generateInp(design.project));
+    expect(run.report).not.toMatch(/ERROR \d+/);
   });
 
   it('picks standard water diameters by velocity', () => {

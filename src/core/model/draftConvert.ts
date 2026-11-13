@@ -83,6 +83,9 @@ export interface SewerDraftOptions {
   outfallDepth: number;
 }
 
+/** 방류구 앞 집수 맨홀 → 방류구 관 길이 (m). */
+const OUTFALL_LINK = 10;
+
 export const DEFAULT_SEWER_DRAFT: SewerDraftOptions = { conversion: 0.9, infiltration: 0.15, peakFactor: 1.5, initialDepth: 1.8, outfallDepth: 3 };
 
 /** 일평균 사용량(m³/일) → 맨홀 설계 유입량(m³/s). */
@@ -126,5 +129,15 @@ export function draftToSewerProject(draft: DraftResult, o: SewerDraftOptions, na
     inlet_offset: 0,
     outlet_offset: 0,
   }));
+  // SWMM 방류구는 유입 관이 하나뿐이어야 한다(ERROR 141). 여러 가지가 모이면 그 자리를 집수 맨홀로 바꾸고
+  // 방류 관 하나(OUTFALL_LINK m)로 방류구에 잇는다.
+  const outfall = nodes.find((n) => n.kind === 'OUTFALL');
+  if (outfall && conduits.filter((c) => c.downstream === outfall.id).length > 1) {
+    const collector = { ...outfall, id: `MH${pad(++m)}`, kind: 'JUNCTION' as const, invert: Math.round((outfall.ground - o.initialDepth) * 1000) / 1000 };
+    nodes.splice(nodes.indexOf(outfall), 0, collector);
+    for (const c of conduits) if (c.downstream === outfall.id) c.downstream = collector.id;
+    outfall.x = Math.round((outfall.x + OUTFALL_LINK) * 1000) / 1000;
+    conduits.push({ ...conduits[0], id: `P${pad(conduits.length + 1)}`, upstream: collector.id, downstream: outfall.id, length: OUTFALL_LINK });
+  }
   return { schema_version: 1, name, nodes, conduits, catchments: [], options: defaultOptions(), constraints: defaultConstraints() };
 }
