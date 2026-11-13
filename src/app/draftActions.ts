@@ -12,6 +12,7 @@ import { mergeNearbyNodes, mergeSeriesPipes, renumber, type RenumberOptions } fr
 import type { LngLat, SourceCrs } from '../core/model/types';
 import { parcelsOf, useDraftStore } from '../store/useDraftStore';
 import { useNetworkStore } from '../store/useNetworkStore';
+import { fitOutfallInverts } from '../core/sewer/outfall';
 import { useSewerStore } from '../store/useSewerStore';
 import { useUIStore } from '../store/useUIStore';
 import { baseName, downloadText } from '../utils/files';
@@ -138,7 +139,9 @@ export function adoptWaterDraft(): void {
 export function sendSewerDraft(): void {
   const s = useDraftStore.getState();
   if (!s.result) return;
-  const project = draftToSewerProject(s.result, s.sewer, `${baseName(s.fileName || '수용가')} 하수 초안`.slice(0, 60));
+  const draft = draftToSewerProject(s.result, s.sewer, `${baseName(s.fileName || '수용가')} 하수 초안`.slice(0, 60));
+  // 방류구 깊이를 설계에 맞춘다 (얕게 고정하면 마지막 관이 역경사·만관이 된다)
+  const { project } = fitOutfallInverts(draft, useSewerStore.getState().designMode);
   useSewerStore.getState().setProject(project);
   s.set({ overlay: false });
   useUIStore.getState().openModal('sewer');

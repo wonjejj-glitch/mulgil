@@ -19,9 +19,59 @@ let cache: { box: Box; roads: LngLat[][] } | null = null;
 
 const inside = (inner: Box, outer: Box) => inner[0] >= outer[0] && inner[1] >= outer[1] && inner[2] <= outer[2] && inner[3] <= outer[3];
 
+/* 브라우저 저장소(IndexedDB) 캐시: 새로고침해도 같은 영역은 서버에 다시 묻지 않는다 (공개 서버가 자주 바쁨). 30일, 최근 6개 영역. */
+const DB = 'mulgil-roads';
+const MAX_AGE = 30 * 24 * 3600 * 1000;
+interface Stored {
+  box: Box;
+  roads: LngLat[][];
+  at: number;
+}
+
+function withStore<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    try {
+      const open = indexedDB.open(DB, 1);
+      open.onupgradeneeded = () => open.result.createObjectStore('areas');
+      open.onerror = () => resolve(undefined);
+      open.onsuccess = () => {
+        const db = open.result;
+        const req = run(db.transaction('areas', mode).objectStore('areas'));
+        req.onsuccess = () => {
+          resolve(req.result);
+          db.close();
+        };
+        req.onerror = () => {
+          resolve(undefined);
+          db.close();
+        };
+      };
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
+
+async function readStored(box: Box): Promise<LngLat[][] | null> {
+  const list = (await withStore<Stored[]>('readonly', (s) => s.get('recent'))) ?? [];
+  const hit = list.find((e) => Date.now() - e.at < MAX_AGE && inside(box, e.box));
+  return hit?.roads ?? null;
+}
+
+async function writeStored(entry: Stored): Promise<void> {
+  const list = (await withStore<Stored[]>('readonly', (s) => s.get('recent'))) ?? [];
+  const next = [entry, ...list.filter((e) => Date.now() - e.at < MAX_AGE && !inside(e.box, entry.box))].slice(0, 6);
+  await withStore('readwrite', (s) => s.put(next, 'recent'));
+}
+
 export async function fetchOsmRoads(south: number, west: number, north: number, east: number): Promise<LngLat[][]> {
   const box: Box = [south, west, north, east];
   if (cache && inside(box, cache.box)) return cache.roads;
+  const stored = typeof indexedDB === 'undefined' ? null : await readStored(box);
+  if (stored) {
+    cache = { box, roads: stored };
+    return stored;
+  }
   const query = `[out:json][timeout:90];way["highway"~"^(${ROAD_TYPES})$"](${south},${west},${north},${east});out geom;`;
   const errors: string[] = [];
   for (const url of OVERPASS_SERVERS) {
@@ -43,6 +93,7 @@ export async function fetchOsmRoads(south: number, west: number, north: number, 
         .filter((e) => e.type === 'way' && e.geometry && e.geometry.length >= 2)
         .map((e) => e.geometry!.map((g): LngLat => [g.lon, g.lat]));
       cache = { box, roads };
+      if (typeof indexedDB !== 'undefined') void writeStored({ box, roads, at: Date.now() });
       return roads;
     } catch (error) {
       errors.push(`${new URL(url).host} ${error instanceof DOMException && error.name === 'AbortError' ? '시간 초과' : '연결 실패'}`);

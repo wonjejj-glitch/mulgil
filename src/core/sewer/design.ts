@@ -17,6 +17,8 @@ export interface DesignRow {
   depth_ratio: number;
   cover: number;
   status: string;
+  /** 실무 모드에서 하류 맨홀 안 낙차(부관) 높이 (m). 원본 호환 모드에는 없다. */
+  drop?: number;
 }
 
 export interface DesignResult {
@@ -120,7 +122,21 @@ export function designSewer(input: SewerProject, diameterFloors: Record<string, 
     const v = nodeOf.get(c.downstream)!;
     c.inlet_offset = maxD.get(u.id)! - c.diameter;
     c.outlet_offset = maxD.get(v.id)! - c.diameter;
-    const slope = (crowns.get(u.id)! - crowns.get(v.id)!) / c.length;
+    let slope = (crowns.get(u.id)! - crowns.get(v.id)!) / c.length;
+    // 실무 모드: 얕은 지선이 깊은 간선 맨홀로 들어가며 경사가 최대 경사를 넘으면, 관은 목표 경사로 두고
+    // 남는 높이를 하류 맨홀 안 낙차(부관, 유출 옵셋)로 처리한다.
+    let drop = 0;
+    if (mode === 'practical' && slope > cst.max_slope + 1e-8) {
+      const crownU = crowns.get(u.id)!;
+      // 하류 끝 관정도 최소 토피 아래에 묻혀야 한다 (급경사 지형에서 관이 땅 위로 나오지 않게)
+      const buried = (crownU - (v.ground - cst.min_cover)) / c.length;
+      const target = Math.max(Math.min(cst.max_slope, Math.max(cst.min_slope, slopes[c.id])), buried);
+      if (target < slope - 1e-9) {
+        drop = crownU - target * c.length - crowns.get(v.id)!;
+        c.outlet_offset += drop;
+        slope = target;
+      }
+    }
     const ratio = normalRatio(q[c.id], c.diameter, slope, c.roughness);
     const [a] = section(c.diameter, ratio);
     const vel = a ? q[c.id] / a : 0;
@@ -140,7 +156,8 @@ export function designSewer(input: SewerProject, diameterFloors: Record<string, 
       velocity: vel,
       depth_ratio: ratio,
       cover,
-      status: problems.length > 0 ? problems.join(' / ') : '적합',
+      status: (problems.length > 0 ? problems.join(' / ') : '적합') + (drop > 0 ? ` · 부관 낙차 ${drop.toFixed(2)} m` : ''),
+      ...(drop > 0 ? { drop } : {}),
     });
   }
   // 변경된 표고·관경 전체를 다시 검증한다 (ground ≤ invert 가 되면 예외).

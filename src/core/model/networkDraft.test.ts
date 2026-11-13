@@ -114,7 +114,7 @@ describe('network draft', () => {
     const practical = designSewer(sewer, {}, 'practical');
     expect(Math.max(...practical.project.conduits.map((c) => c.diameter))).toBe(sewer.constraints.diameters[0]);
     expect(Math.max(...design.project.conduits.map((c) => c.diameter))).toBeGreaterThan(sewer.constraints.diameters[0]);
-    expect(practical.rows.every((r) => r.status === '적합' || r.status.includes('유속'))).toBe(true);
+    expect(practical.rows.every((r) => r.status.startsWith('적합') || r.status.includes('유속'))).toBe(true);
   });
 
   it('gives a mid-network outfall a single inlet so SWMM accepts it', async () => {

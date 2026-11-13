@@ -1,10 +1,11 @@
-import { CircleCheck, Download, FilePlus2, FolderOpen, Map as MapIcon, Play, Plus, RefreshCw, Repeat, Save, SkipForward, Trash, TriangleExclamationPoint, Undo2, Wand2 } from 'lucide-react';
+import { ArrowDownToLine, CircleCheck, Download, FilePlus2, FolderOpen, Map as MapIcon, Play, Plus, RefreshCw, Repeat, Save, SkipForward, Trash, TriangleExclamationPoint, Undo2, Wand2 } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, Area } from 'recharts';
 import {
   applyDesignToProject,
   exportSewerCsv,
   exportSewerInp,
+  fitOutfallDepth,
   openSewerFile,
   runSewerDesign,
   runSewerOptimize,
@@ -443,6 +444,10 @@ function DesignTab() {
           <Wand2 size={13} />
           ① 자동 설계
         </Button>
+        <Button onClick={fitOutfallDepth} title="마지막 관이 필요한 경사를 갖도록 방류구 관저고를 다시 정합니다 (입력에 반영, 실행 취소 가능)">
+          <ArrowDownToLine size={13} />
+          방류구 깊이 맞춤
+        </Button>
         <Button disabled={!design} onClick={applyDesignToProject} title="설계한 관경·관저고·옵셋을 입력 표에 반영합니다 (실행 취소 가능)">
           <RefreshCw size={13} />
           설계 결과를 입력에 반영
@@ -496,7 +501,7 @@ function DesignTab() {
                     <td className="px-2 py-0.5 text-right text-ink-soft">{r.velocity.toFixed(2)}</td>
                     <td className="px-2 py-0.5 text-right text-ink-soft">{r.depth_ratio.toFixed(2)}</td>
                     <td className="px-2 py-0.5 text-right text-ink-soft">{r.cover.toFixed(2)}</td>
-                    <td className={`px-2 py-0.5 ${r.status === '적합' ? 'text-good' : 'text-[#f3a5a5]'}`}>{r.status}</td>
+                    <td className={`px-2 py-0.5 ${r.status.startsWith('적합') ? 'text-good' : 'text-[#f3a5a5]'}`}>{r.status}</td>
                   </tr>
                 ))}
               </tbody>

@@ -5,6 +5,7 @@
 import { designSewer, type DesignResult } from '../core/sewer/design';
 import { generateInp } from '../core/sewer/inp';
 import { optimizeSewer } from '../core/sewer/optimize';
+import { fitOutfallInverts } from '../core/sewer/outfall';
 import { parseReport, summarizeSimulation, type SimulationSummary } from '../core/sewer/report';
 import { parseSewerProject, SewerValidationError } from '../core/sewer/validate';
 import type { SewerProject } from '../core/sewer/types';
@@ -110,6 +111,28 @@ export async function runSewerOptimize(): Promise<void> {
     store.setError(message(error));
   } finally {
     store.setBusy(null);
+  }
+}
+
+/** 방류구 관저고를 설계에 맞춰 다시 정한다 (입력에 반영, 실행 취소 가능). */
+export function fitOutfallDepth(): void {
+  const store = useSewerStore.getState();
+  const project = validatedProject();
+  if (!project) return;
+  try {
+    const { project: fitted, changes } = fitOutfallInverts(project, store.designMode);
+    if (changes.length === 0) {
+      useUIStore.getState().pushToast({ level: 'info', title: '맞출 방류구가 없습니다', message: '유입 관이 하나인 방류구만 맞춥니다.' });
+      return;
+    }
+    store.setProject(fitted);
+    useUIStore.getState().pushToast({
+      level: 'success',
+      title: '방류구 깊이를 맞췄습니다',
+      message: changes.map((c) => `${c.id}: 관저고 ${c.from.toFixed(2)} → ${c.to.toFixed(2)} m`).join(' · ') + ' — ① 자동 설계를 다시 누르세요.',
+    });
+  } catch (error) {
+    store.setError(message(error));
   }
 }
 
