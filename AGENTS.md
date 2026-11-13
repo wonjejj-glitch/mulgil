@@ -211,9 +211,11 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
 - **사용 설명서**: `public/manual.html`(정적, 툴바 📖 버튼이 BASE_URL 기준으로 새 탭). 기능을 바꾸면 설명서도 고칠 것. 끝에 기존 데스크톱 프로그램 대응표가 있다.
 - **기존 데스크톱 관망 프로그램**(상수·하수 각 1종, 매뉴얼은 저장소 밖)에서 가져온 것: 분담유량·산출표, 검토 목록, 절점/링크 병합, ID 재부여, 자동 백업. 남은 후보: 종단 편집 단축키·접합 명령,
   강우강도식(일반식/다항식)·누가면적별 첨두계수, 유역→관 면적 자동 배분, 맨홀 라이브러리, 처리 구역, 지하매설물·보링 종단 표시.
-- **SWMM 5.2.4 직접 빌드**: emsdk 로 시도했으나 이 PC 의 Windows 애플리케이션 제어 정책이 clang.exe 를 막아 중단. 빌드 플래그는 swmmRunner 와 맞춘
-  `-sMODULARIZE -sEXPORT_ES6 -sSINGLE_FILE -sENVIRONMENT=web,worker,node -sEXPORTED_FUNCTIONS=_swmm_run,_swmm_getVersion -sEXPORTED_RUNTIME_METHODS=FS,ccall -sALLOW_MEMORY_GROWTH`
-  (src/solver/*.c 54개). GitHub Actions 등 다른 환경에서 빌드하면 `@fileops/swmm-wasm-web` 대신 그 모듈을 loadFactory 에서 불러오면 된다.
+- **배포·SWMM 5.2.4**: 저장소 https://github.com/wonjejj-glitch/mulgil (공개), 사이트 https://wonjejj-glitch.github.io/mulgil/ .
+  main 에 push 하면 `.github/workflows/deploy.yml` 이 ① emscripten/emsdk 컨테이너에서 USEPA 공식 v5.2.4 소스를 `swmm5.mjs`(SINGLE_FILE ES 모듈)로 컴파일
+  ② `src/core/swmm/engine/` 에 넣고 lint·test(엔진 테스트가 5.2.4 로 돔)·build(BASE_PATH=/mulgil/) ③ Pages 배포. 배포본 보고서 머리글 "VERSION 5.2 (Build 5.2.4)" 확인.
+  `swmmRunner.loadFactory` 는 `import.meta.glob('./engine/swmm5.mjs')` 가 있으면 그것, 없으면(로컬 PC — 앱 제어 정책이 clang 을 막아 로컬 빌드 불가) 5.2.2 패키지.
+  저장소에서 빼는 것(.gitignore): `sewer_rehab/`(실제 사업 자료가 있는 별도 프로젝트), `.claude/`. 회사·사업지 이름을 코드·문서에 넣지 말 것(공개 저장소).
 - **테스트 하네스 주의**: 개발 서버 실행 중 고친 모듈은 `?t=` 붙은 별도 인스턴스로 로드된다. 브라우저 콘솔에서 `import('/src/...')` 로 스토어를 만지면
   앱과 다른 인스턴스일 수 있다 — performance 리소스 목록에서 최신 `?t=` URL 을 골라 import 할 것.
 - **관망이 사라지고 배경지도만 보일 때**: 관망 레이어(deck.gl)는 별도 WebGL 캔버스다. 탭을 오래 켜 두거나 새로고침·핫리로드를 반복하면 브라우저가 컨텍스트를 끊는다.
