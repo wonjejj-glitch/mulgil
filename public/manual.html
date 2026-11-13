@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>물길 사용 설명서</title>
+<style>
+  :root {
+    --bg: #fbfaf7; --panel: #ffffff; --ink: #1d2126; --soft: #4a5260; --muted: #7a818c;
+    --line: #e2ded5; --accent: #1f6fd1; --accent-bg: #e8f1fc; --warn: #a15c00; --warn-bg: #fff4e0; --code: #f1eee8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216; --panel: #161a20; --ink: #e8e6e1; --soft: #b7b4ad; --muted: #8b8a84;
+      --line: #2a313b; --accent: #6aa7f0; --accent-bg: #16263a; --warn: #f0b45a; --warn-bg: #2a2114; --code: #1d232b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.7 "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif; }
+  .wrap { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1180px; margin: 0 auto; }
+  nav { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; padding: 28px 18px; border-right: 1px solid var(--line); font-size: 13.5px; }
+  nav .brand { font-weight: 700; font-size: 18px; margin-bottom: 4px; }
+  nav .sub { color: var(--muted); font-size: 12px; margin-bottom: 18px; }
+  nav a { display: block; color: var(--soft); text-decoration: none; padding: 3px 6px; border-radius: 5px; }
+  nav a:hover { background: var(--accent-bg); color: var(--ink); }
+  nav .grp { margin: 14px 0 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; color: var(--muted); }
+  main { padding: 32px 44px 80px; min-width: 0; }
+  h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -.01em; }
+  h2 { font-size: 21px; margin: 48px 0 10px; padding-top: 12px; border-top: 1px solid var(--line); letter-spacing: -.01em; }
+  h3 { font-size: 16px; margin: 26px 0 6px; }
+  p, li { color: var(--ink); }
+  .lead { color: var(--soft); font-size: 16px; }
+  ol, ul { padding-left: 22px; }
+  li { margin: 3px 0; }
+  code, kbd { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; background: var(--code); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+  kbd { border-bottom-width: 2px; }
+  .path { font-weight: 600; color: var(--accent); }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 16px; font-size: 13.5px; display: block; overflow-x: auto; }
+  th, td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: var(--panel); font-weight: 600; white-space: nowrap; }
+  .note, .warn { border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 14px; }
+  .note { background: var(--accent-bg); border-left: 3px solid var(--accent); }
+  .warn { background: var(--warn-bg); border-left: 3px solid var(--warn); }
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 10px 0; font-size: 13.5px; }
+  .flow span { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  .flow b { color: var(--muted); font-weight: 400; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 14px 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 13.5px; }
+  .card strong { display: block; margin-bottom: 3px; }
+  footer { margin-top: 60px; color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 860px) {
+    .wrap { grid-template-columns: 1fr; }
+    nav { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }
+    main { padding: 20px 16px 60px; }
+  }
+  @media print { nav { display: none; } .wrap { display: block; } main { padding: 0; } h2 { break-before: page; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav aria-label="목차">
+  <div class="brand">물길</div>
+  <div class="sub">상수·우수·하수 관망해석 워크스페이스 · 사용 설명서</div>
+  <div class="grp">시작</div>
+  <a href="#start">처음 시작하기</a>
+  <a href="#screen">화면 구성</a>
+  <a href="#workflow">작업 순서 한눈에</a>
+  <div class="grp">상수관망</div>
+  <a href="#open">불러오기 · 좌표계</a>
+  <a href="#draw">그리기 · 편집</a>
+  <a href="#draft">수용가 자료로 관망 초안</a>
+  <a href="#allocate">용도지역 분담유량</a>
+  <a href="#correct">위치 · 표고 보정</a>
+  <a href="#tools">관망 정리 도구</a>
+  <a href="#validate">관망 검증</a>
+  <a href="#analysis">수리 · 수질 해석</a>
+  <a href="#results">결과 보기 · 내보내기</a>
+  <a href="#fireflow">소화용수 · 급수구역</a>
+  <div class="grp">우수 · 하수</div>
+  <a href="#swmm">SWMM 파일 보기 · 해석</a>
+  <a href="#sewer">하수관 자동 설계</a>
+  <a href="#review">검토 목록</a>
+  <div class="grp">참고</div>
+  <a href="#backup">자동 백업</a>
+  <a href="#keys">단축키</a>
+  <a href="#compare">기존 프로그램과 대응</a>
+  <a href="#limits">한계 · 주의</a>
+</nav>
+
+<main>
+<h1>물길 사용 설명서</h1>
+<p class="lead">설치 없이 웹 브라우저에서 상수관망(EPANET)과 우수·하수관망(SWMM)을 만들고, 검증하고, 해석하고, 지도 위에서 결과를 보는 프로그램입니다. CAD 없이 GIS 파일과 지도만으로 작업합니다.</p>
+<div class="note">모든 계산은 이 컴퓨터의 브라우저 안에서 합니다. 관망 파일은 어디로도 올라가지 않습니다. 외부로 나가는 요청은 배경지도·지형 타일과 도로 자료(OpenStreetMap)뿐이고, 도로 요청에는 영역 경계 좌표만 들어갑니다.</div>
+
+<h2 id="start">처음 시작하기</h2>
+<p>빈 화면 가운데 안내 상자에서 고릅니다.</p>
+<div class="cards">
+  <div class="card"><strong>파일 열기</strong>EPANET <code>.inp</code>, SWMM <code>.inp</code>, GeoJSON, Shapefile(<code>.shp+.dbf+.prj</code> 또는 <code>.zip</code>). 창에 끌어다 놓아도 됩니다.</div>
+  <div class="card"><strong>수용가 자료로 만들기</strong>수용가 위치·사용량 CSV 만 있으면 도로를 따라 관망 초안을 만듭니다. <a href="#draft">자세히</a></div>
+  <div class="card"><strong>샘플 관망</strong>가상 배수구역, 검증 오류 포함 관망, 우수관망(SWMM) 예제로 기능을 익힙니다.</div>
+  <div class="card"><strong>지난 작업 복원</strong>창을 닫았거나 브라우저가 멈췄을 때 마지막 상태를 되살립니다. <a href="#backup">자세히</a></div>
+</div>
+<p>관망을 직접 그리려면 상단 도구(절점 <kbd>J</kbd>, 수원지 <kbd>R</kbd>, 관로 <kbd>P</kbd>)를 고르고 지도를 클릭합니다.</p>
+
+<h2 id="screen">화면 구성</h2>
+<table>
+  <tr><th>위치</th><th>내용</th></tr>
+  <tr><td>상단 도구막대</td><td><span class="path">파일</span>(새 프로젝트·열기·내보내기·샘플), <span class="path">데이터</span>(해석 옵션·곡선·제어 규칙·관망 초안·분담유량·관망 정리·하수관 자동 설계·위치/표고 보정·소화용수), 편집 도구, 실행 취소/다시 실행, 관망 검증, 해석 실행, 사용 설명서</td></tr>
+  <tr><td>왼쪽 패널</td><td>레이어 켜고 끄기(절점·수원지·관로·펌프/밸브·ID 라벨·유향 화살표·3D 수압 기둥), 주제도(색 표시), 배경지도, 가져오기 좌표계, 위치·표고 보정</td></tr>
+  <tr><td>가운데 지도</td><td>관망과 결과 색. 아래 줄에 커서의 경위도와 EPSG:5186 좌표, 절점·링크 수, 줌</td></tr>
+  <tr><td>오른쪽 패널</td><td>선택한 객체의 속성(표고·수요량·관경·연장·조도 등)을 바로 고칩니다. 여러 개를 고르면 일괄 편집</td></tr>
+  <tr><td>아래 패널</td><td>시계열(시간 슬라이더·그래프), 종단면도, 결과 표, 관망 검증 결과, 해석 로그</td></tr>
+</table>
+
+<h2 id="workflow">작업 순서 한눈에</h2>
+<h3>상수관망</h3>
+<div class="flow"><span>불러오기 또는 초안 만들기</span><b>→</b><span>위치·표고 보정</span><b>→</b><span>분담유량</span><b>→</b><span>관망 정리 · 검증</span><b>→</b><span>해석 실행 (F5)</span><b>→</b><span>결과 보기 · 내보내기</span></div>
+<h3>하수관</h3>
+<div class="flow"><span>수용가 초안 또는 표 입력</span><b>→</b><span>설계 조건</span><b>→</b><span>① 자동 설계</span><b>→</b><span>② SWMM 해석</span><b>→</b><span>③ 반복 검토</span><b>→</b><span>검토 목록</span><b>→</b><span>지도에서 보기</span></div>
+
+<h2 id="open">불러오기 · 좌표계</h2>
+<ul>
+  <li><span class="path">파일 → 열기</span> 또는 <kbd>Ctrl</kbd>+<kbd>O</kbd>, 또는 파일을 창에 끌어다 놓기.</li>
+  <li>EPANET 과 SWMM <code>.inp</code> 는 내용으로 구분합니다. SWMM 파일은 <a href="#swmm">우수·하수 보기</a>로 열립니다.</li>
+  <li>Shapefile 은 <code>.shp</code>·<code>.dbf</code>·<code>.prj</code> 를 함께 고르거나 <code>.zip</code> 하나로 넣습니다. 관로(선)와 절점·밸브(점) 레이어를 함께 넣으면 한 관망으로 합칩니다.</li>
+</ul>
+<h3>좌표계</h3>
+<p>왼쪽 패널 <span class="path">가져오기 좌표계</span>가 기본 ‘자동 감지’입니다. 경위도와 국내 평면좌표(EPSG:5186 중부원점, 5185 서부, 5187 동부, 5188 동해, 5181·5174·2097·5179 등)를 다룹니다.</p>
+<div class="warn">중부원점 계열(5186·5181·5174·2097)은 좌표 범위가 겹쳐 자동으로 구분할 수 없습니다. 위치가 수십 m~수백 m 어긋나면 <span class="path">위치·표고 보정 → ① 좌표계·전체 밀림 자동 보정</span>을 누르세요. 도로와 가장 잘 맞는 좌표계와 평행 이동량을 찾아 줍니다. <code>.inp</code> 로 내보낼 때는 원래 좌표로 돌려 씁니다.</div>
+
+<h2 id="draw">그리기 · 편집</h2>
+<table>
+  <tr><th>도구</th><th>키</th><th>쓰는 법</th></tr>
+  <tr><td>선택·이동</td><td><kbd>V</kbd></td><td>클릭으로 선택, 절점을 끌어 이동(연결 관로 연장 자동 재계산). <kbd>Ctrl</kbd>/<kbd>Shift</kbd>+클릭으로 여러 개 선택</td></tr>
+  <tr><td>구역 선택</td><td><kbd>A</kbd></td><td>다각형 꼭짓점을 찍고 더블클릭으로 닫으면 안의 객체를 모두 선택. Shift 를 누른 채 닫으면 기존 선택에 추가</td></tr>
+  <tr><td>종단면도</td><td><kbd>G</kbd></td><td>시점 → (경유) → 종점 절점을 차례로 클릭</td></tr>
+  <tr><td>절점 / 수원지 / 배수지</td><td><kbd>J</kbd> <kbd>R</kbd> <kbd>T</kbd></td><td>지도 클릭으로 추가. 관로 위에 절점을 찍으면 그 자리에서 관로를 자동으로 나눔</td></tr>
+  <tr><td>관로</td><td><kbd>P</kbd></td><td>시작 절점 → 빈 곳 클릭(꺾임점) → 끝 절점 또는 더블클릭. 이어서 다음 관로를 그립니다</td></tr>
+  <tr><td>펌프 / 밸브</td><td><kbd>U</kbd> <kbd>L</kbd></td><td>흡입측(상류) → 토출측(하류) 절점 순서로 클릭</td></tr>
+</table>
+<p>속성은 오른쪽 패널에서 고칩니다. 여러 개를 골랐으면 같은 칸에 값을 넣어 한꺼번에 바꿉니다. 관로 연장은 ‘직접 입력’으로 고정할 수 있습니다(절점을 옮겨도 그대로). 모든 편집은 <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd> 로 되돌립니다.</p>
+<p>펌프·배수지 곡선, 수요 패턴, 제어 규칙(CONTROLS / RULES)은 <span class="path">데이터</span> 메뉴에서 표로 편집합니다. 편집은 실행 취소할 수 있습니다.</p>
+
+<h2 id="draft">수용가 자료로 관망 초안 만들기</h2>
+<p><span class="path">데이터 → 수용가 자료로 관망 초안 만들기</span>. 수용가 위치와 사용량만으로 도로 밑을 지나는 관망 초안을 만듭니다.</p>
+<ol>
+  <li><b>CSV 열기.</b> 요금·급수 대장에서 내려받은 표를 그대로 넣습니다. 엑셀은 ‘CSV(쉼표로 분리)’로 저장합니다. 한글 인코딩(EUC-KR/UTF-8)은 자동으로 구분합니다.
+    <table>
+      <tr><th>열</th><th>예</th><th>비고</th></tr>
+      <tr><td>수용가 번호</td><td>W0001</td><td>없으면 줄 번호</td></tr>
+      <tr><td>X / 경도</td><td>126.9043 또는 194532.1</td><td>경위도 또는 평면좌표(m)</td></tr>
+      <tr><td>Y / 위도</td><td>37.5561 또는 450123.4</td><td></td></tr>
+      <tr><td>사용량</td><td>32.5</td><td>단위 선택: m³/월(30.4일로 나눔), m³/일, L/s</td></tr>
+    </table>
+    열 이름(수용가번호·경도·위도·월사용량 등)으로 열을 짐작하고, 틀리면 목록에서 고칩니다. 주소만 있는 자료는 먼저 좌표로 바꿔야 합니다.</li>
+  <li><b>종류와 기준.</b> 상수(배수관망) 또는 하수(오수 관거). 수용가→도로 최대 거리, 관 최대 길이(하수는 맨홀 최대 간격)를 정합니다.</li>
+  <li><b>수원·방류구 위치.</b> ‘지도에서 위치 찍기’를 누르면 대화상자가 잠시 닫히고, 지도를 한 번 클릭하면 돌아옵니다(<kbd>Esc</kbd> 취소). 안 찍으면 상수는 가장 높은 수용가, 하수는 가장 낮은 수용가 근처로 정합니다.</li>
+  <li><b>초안 만들기.</b> 도로 자료와 지반고를 받아 계산합니다(보통 수십 초). ‘지도에서 미리 보기’로 노란 선(초안 관로), 파란 점(연결된 수용가), 빨간 점(연결 못 한 수용가)을 봅니다.</li>
+  <li><b>열기.</b> 상수는 <span class="path">상수 관망으로 열기</span>로 바로 해석할 수 있는 관망이 됩니다. 하수는 <span class="path">하수 자동 설계로 보내기</span>로 <a href="#sewer">하수관 자동 설계</a>에 넘어갑니다.</li>
+</ol>
+<h3>어떻게 만드나</h3>
+<ul>
+  <li>도로 중심선을 15 m 간격으로 나눠 그래프를 만들고, 수용가를 가장 가까운 도로 지점에 붙입니다(급수관·연결관 자리).</li>
+  <li>수원(방류구)에서 시작해, 지금 관망에서 가장 가까운 수용가 접속점부터 차례로 최단 경로를 이어 붙입니다(탐욕적 스타이너 나무). 같은 길을 두 번 깔지 않아 총연장이 짧습니다.</li>
+  <li>하수는 지반고를 보고 흐름 방향으로 오르막인 길에 벌점을 줘, 자연 유하가 되는 길을 고릅니다.</li>
+  <li>분기점·수용가 접속점·최대 길이마다 절점(맨홀)을 두고, 5 m 보다 짧은 관은 하류 절점으로 합칩니다.</li>
+  <li>상수 관경은 지나는 사용량 × 첨두계수를 설계 유속으로 나눠 표준 관경(80~1200 mm)으로 올려 고릅니다.</li>
+  <li>하수 맨홀 유입량은 사용량 × 오수 전환율 × (1 + 지하수 침입 비율) × 첨두계수입니다.</li>
+</ul>
+<div class="warn">결과는 가지형(나무) <b>초안</b>입니다. 상수 환상망(루프)·제수밸브·감압밸브·가압장, 하수 중계펌프장은 엔지니어가 판단해 더하세요. 첨두계수·설계 유속·전환율 기본값은 예시값이니 사업 기본계획 값으로 바꿔 쓰세요.</div>
+
+<h2 id="allocate">용도지역 분담유량</h2>
+<p><span class="path">데이터 → 용도지역 분담유량</span>. 절점 기본 수요량을 <b>Σ(연결된 용도 구역 면적 × 용도별 원단위)</b>로 정하고 산출표를 냅니다.</p>
+<ol>
+  <li>용도지역·토지이용계획 면 레이어(<code>.shp</code>/<code>.zip</code>/<code>.geojson</code>)를 엽니다. CAD 에서 GEO 로 옮길 필요가 없습니다.</li>
+  <li>용도 열(예: <code>UNAME</code>)을 고르면 용도 목록이 나옵니다. 용도별 원단위(m³/일/ha)를 넣습니다.</li>
+  <li><span class="path">계산</span> → 표에서 구역·용도·면적·구역 유량·연결 방법·절점·분담량을 확인합니다.</li>
+  <li><span class="path">수요량에 반영</span>(덮어쓰기) 또는 <span class="path">기존 수요량에 더하기</span>. 모델의 유량 단위로 바꿔 넣고, <kbd>Ctrl</kbd>+<kbd>Z</kbd> 로 되돌릴 수 있습니다.</li>
+  <li><span class="path">분담유량 산출표 CSV</span>: 구역별 행, 절점별 합계, 제외된 구역을 엑셀에서 바로 엽니다.</li>
+</ol>
+<p><b>연결 규칙:</b> 구역 안에 절점이 있으면 그 절점들이 똑같이 나눠 받습니다. 없으면 구역 중심에서 가장 가까운 절점이 받습니다(연결관, 최대 거리 안). 구역 선택(<kbd>A</kbd>)으로 절점을 골라 두면 그 절점에만 배분합니다.</p>
+
+<h2 id="correct">위치 · 표고 보정</h2>
+<p><span class="path">데이터 → 도로 따라 관로 맞추기 · 표고 보정</span>, 또는 왼쪽 패널 아래 버튼.</p>
+<ul>
+  <li><b>① 좌표계·전체 밀림 자동 보정:</b> 관망 전체를 한 번에 옮깁니다(좌표계 선택 + 평행 이동).</li>
+  <li><b>② 도로 따라 관로 맞추기:</b> 절점을 가까운 도로 중심선(교차점 우선)으로 옮기고, 관로 꺾임점을 도로를 따라 다시 만듭니다. 도로에서 먼 관로(논·산을 가로지르는 관)는 그대로 둡니다.</li>
+  <li><b>표고 보정:</b> 온라인 지형 타일 또는 수치지형도(표고점·등고선 Shapefile)로 절점 지반고를 바꿉니다. 바꾸기 전에 절점별 기존 값과 새 값을 비교해 보여 줍니다.</li>
+</ul>
+<p>순서는 ① → ② → 표고를 권합니다.</p>
+
+<h2 id="tools">관망 정리 도구</h2>
+<p><span class="path">데이터 → 관망 정리</span>. 구역 선택으로 일부만 고르면 그 객체에만, 아니면 관망 전체에 적용합니다. 모두 실행 취소할 수 있습니다.</p>
+<table>
+  <tr><th>도구</th><th>하는 일</th></tr>
+  <tr><td>가까운 절점 병합</td><td>지정 거리 안에 겹친 절점을 하나로 합칩니다. 수원지·배수지가 있으면 그것을 남기고 수요량은 더합니다. 사이에 펌프·밸브가 있으면 합치지 않습니다.</td></tr>
+  <tr><td>직렬 관로 병합</td><td>수요 0 인 절점에 관경·조도·손실계수·상태가 같은 관 두 개만 이어져 있으면 하나로 합칩니다(형상은 꺾임점으로 남김).</td></tr>
+  <tr><td>ID 일괄 재부여</td><td>절점 또는 링크(종류별)에 접두어 + 자리수 + 시작 번호 + 증감으로 이름을 다시 붙입니다. 예: <code>J001, J002 …</code>. 제어 규칙·수질 섹션의 참조도 함께 바뀝니다.</td></tr>
+</table>
+
+<h2 id="validate">관망 검증</h2>
+<p>상단 <span class="path">관망 검증</span>. 결과는 아래 <span class="path">관망 검증 결과</span> 탭에 나오고, 항목을 누르면 지도가 그 객체로 이동해 강조합니다.</p>
+<ul>
+  <li><b>고립 절점:</b> 어떤 관로와도 이어지지 않은 절점</li>
+  <li><b>중복 관로:</b> 같은 두 절점을 잇는 관로가 둘 이상</li>
+  <li><b>미소 관로:</b> 연장 1.0 m 미만</li>
+  <li><b>단절 관망:</b> 수원지·배수지와 이어지지 않아 물이 갈 수 없는 블록</li>
+  <li><b>교차 미분할:</b> 지도에서 교차하지만 교차점에 절점이 없는 관로</li>
+</ul>
+<p>검증 대화상자에서 항목별 <b>일괄 보정</b>(교차 자동 분할, 미소 관로 병합, 중복 삭제 등)을 할 수 있습니다.</p>
+
+<h2 id="analysis">수리 · 수질 해석</h2>
+<ul>
+  <li><span class="path">해석 옵션</span>: 유량 단위(LPS·CMD 등), 손실수두 공식(Hazen-Williams·Darcy-Weisbach·Chezy-Manning), 총 모의 시간·계산 간격, 수요 패턴, 수질(잔류염소·수령·수원 추적).</li>
+  <li><span class="path">해석 실행</span> 또는 <kbd>F5</kbd>. 계산은 별도 작업자(Web Worker)에서 하므로 큰 관망도 화면이 멈추지 않습니다. 엔진은 OWA-EPANET 2.3(WebAssembly)입니다.</li>
+  <li>음압·수리 불균형 같은 문제는 한국어 알림으로 원인과 문제 절점을 보여 줍니다. ‘문제 위치 보기’를 누르면 지도에 표시합니다.</li>
+</ul>
+
+<h2 id="results">결과 보기 · 내보내기</h2>
+<ul>
+  <li><b>주제도:</b> 왼쪽 패널에서 절점(수압·수두·수요·수질·급수구역·표고)과 관로(유속·유량·단위 손실수두·수질·관경) 색을 고릅니다. 수압 15 m 미만 경고, 70 m 초과 고수압 표시.</li>
+  <li><b>시간 이동:</b> 아래 시계열 슬라이더, 재생은 <kbd>Space</kbd>. 유향 화살표가 시간대별 흐름 방향을 따라갑니다.</li>
+  <li><b>종단면도:</b> <kbd>G</kbd> 도구로 경로를 찍으면 지반고·수두선을 그립니다.</li>
+  <li><b>결과 표:</b> 시각별 절점·관로 값. CSV 로 내보냅니다.</li>
+  <li><b>내보내기:</b> <span class="path">파일 → EPANET .inp 내보내기</span>(<kbd>Ctrl</kbd>+<kbd>S</kbd>, 원래 좌표계로), GeoJSON 내보내기.</li>
+</ul>
+
+<h2 id="fireflow">소화용수 · 급수구역</h2>
+<ul>
+  <li><b>소화용수 분석</b>(<span class="path">데이터</span> 메뉴): 절점마다 지정한 소화 유량을 더했을 때 그 절점의 잔압과 관망 최저 수압(및 그 위치)을 계산해 기준 이상인지 봅니다. 대상은 모든 절점 또는 구역 선택한 절점입니다.</li>
+  <li><b>급수구역:</b> 주제도 ‘급수구역’은 어느 수원에서 물을 받는지 나눠 색칠합니다.</li>
+</ul>
+
+<h2 id="swmm">SWMM 파일 보기 · 해석</h2>
+<p>SWMM <code>.inp</code> 를 열면 우수·하수 보기로 바뀝니다. 오른쪽 패널에서 <span class="path">SWMM 해석 실행</span>, 흐름 계산(원본/DYNWAVE/KINWAVE)을 고르고, 절점 수심 비율·관거 충만도 색과 시간대별 결과, 해석 보고서를 봅니다. 이 보기는 읽기 전용입니다. 입력 파일 원문을 그대로 SWMM 5.2 엔진에 넘기므로 모든 섹션이 반영됩니다.</p>
+<p>좌표가 없는(모두 0) 파일은 연결 관계로 배치도를 만들어 보여 줍니다.</p>
+
+<h2 id="sewer">하수관 자동 설계</h2>
+<p><span class="path">데이터 → 하수관 자동 설계</span>. 가지형(수지상) 중력 하수관을 설계하고 SWMM 으로 검증합니다.</p>
+<ol>
+  <li><b>관망 입력:</b> 맨홀(좌표·지반고·오수 유입), 관로(상·하류 맨홀·연장), 유역(면적·불투수율·유출계수)을 표로 넣거나 JSON 으로 엽니다. <a href="#draft">수용가 초안</a>에서 보내도 됩니다.</li>
+  <li><b>설계 조건:</b> 최소 토피, 최대 굴착깊이, 최소·최대 경사, 최소·최대 유속, 최대 충만율 d/D, 표준 관경, 강우(설계 강우강도와 시간 분포). <b>소유량 관로 처리</b>: ‘실무’는 유량이 너무 작아 최소 유속을 못 내는 관에 최소 관경·최소 경사를 쓰고 ‘유속 미달’로 표시합니다. ‘원본 호환’은 가장 큰 관경을 넣습니다.</li>
+  <li><b>① 자동 설계:</b> 상류부터 합리식(Q = C·I·A/360)과 오수량을 누적하고, 부분 충만 Manning 식으로 조건을 만족하는 가장 작은 표준 관경과 경사를 고릅니다. 맨홀마다 관정을 맞추고 토피·굴착깊이·유속·d/D 를 검토합니다. 표와 종단도(지반·관정·관저)가 나옵니다.</li>
+  <li><b>② SWMM 해석:</b> 설계한 관망을 동적파로 해석해 월류·만관 초과·연속성 오차를 봅니다. 종단도에 최대 수두선이 더해집니다.</li>
+  <li><b>③ 반복 검토:</b> 설계 → 해석 → 용량이 부족하거나 월류한 관로의 관경을 한 규격씩 키우는 과정을 조건을 만족할 때까지(최대 반복 횟수) 되풀이합니다.</li>
+  <li><b>지도에서 보기:</b> 설계 결과를 SWMM 보기로 열어 지도에서 확인합니다. <span class="path">SWMM .inp</span>, <span class="path">CSV</span> 로 내보냅니다.</li>
+</ol>
+<div class="warn">설계 조건 기본값(최소 토피 1 m, 유속 0.6~3.0 m/s, d/D 0.8 등)은 예시값이며 하수도 설계기준으로 검증된 값이 아닙니다. 사업에서 쓰는 기준으로 넣으세요. 이 설계는 초기 설계용 탐욕적 휴리스틱이며 공사비 최적화나 수면곡선(GVF) 계산이 아닙니다.</div>
+
+<h2 id="review">검토 목록</h2>
+<p>하수관 자동 설계의 <span class="path">검토 목록</span> 탭. 기존 하수 설계 프로그램의 검토 목록과 같은 판정 체계입니다.</p>
+<table>
+  <tr><th>검토 유형</th><th>판정 기준 (기본값)</th></tr>
+  <tr><td>Overflow</td><td>설계 유량 &gt; 만관 유량, 또는 해석에서 만관·만관 초과</td></tr>
+  <tr><td>최소 유속 미달</td><td>판정 유속 &lt; 최소 유속 (0.6 m/s)</td></tr>
+  <tr><td>최대 유속 초과</td><td>판정 유속 &gt; 최대 유속 (3.0 m/s)</td></tr>
+  <tr><td>동수위 오류</td><td>시점 또는 종점 동수위 &gt; 지반고 + 판정 기준 (GL+0 m). SWMM 해석 후 판정</td></tr>
+  <tr><td>역경사</td><td>관로 구배 &lt; 0</td></tr>
+</table>
+<ul>
+  <li>판정은 <b>GOOD / NG / -</b>(아직 계산 안 됨). 판정 유속은 실유속 또는 만관 유속 중에서 고릅니다.</li>
+  <li>처음 열면 NG 가 있는 첫 유형(Overflow → 최소 유속 → 최대 유속 → 동수위 → 역경사)을 보여 줍니다. 유형 단추로 NG 관로만 걸러 봅니다.</li>
+  <li><span class="path">다음 NG</span>: 다음 문제 관로로 이동하고, 아래 종단도를 그 관로부터 다시 그립니다.</li>
+  <li>열: 관로·시점→종점·관경·연장·누가연장·토피·구배(‰)·설계유량·만관유량·실유속·d/D·사용율·동수위. 하늘색 관로번호는 시작관·관말입니다.</li>
+  <li><span class="path">CSV</span>: 판정을 포함한 전체 표를 엑셀용으로 저장합니다.</li>
+</ul>
+
+<h2 id="backup">자동 백업</h2>
+<p>관망을 고치면 3초 뒤 이 브라우저 저장소에 자동으로 남깁니다. 창을 닫거나 브라우저가 멈춰도 다음에 열 때 시작 화면의 <span class="path">지난 작업 … 복원</span>을 누르면 됩니다. 백업은 이 컴퓨터의 이 브라우저에만 있습니다. 다른 컴퓨터로 옮기려면 <code>.inp</code> 로 내보내세요.</p>
+
+<h2 id="keys">단축키</h2>
+<table>
+  <tr><th>키</th><th>동작</th><th>키</th><th>동작</th></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>파일 열기</td><td><kbd>V</kbd></td><td>선택·이동</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>EPANET .inp 내보내기</td><td><kbd>A</kbd></td><td>구역 선택</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>실행 취소 / 다시 실행</td><td><kbd>G</kbd></td><td>종단면도</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd></td><td>모두 선택</td><td><kbd>J</kbd> <kbd>R</kbd> <kbd>T</kbd></td><td>절점 / 수원지 / 배수지</td></tr>
+  <tr><td><kbd>F5</kbd></td><td>해석 실행</td><td><kbd>P</kbd> <kbd>U</kbd> <kbd>L</kbd></td><td>관로 / 펌프 / 밸브</td></tr>
+  <tr><td><kbd>Delete</kbd></td><td>선택 삭제</td><td><kbd>F</kbd></td><td>관망 전체 보기</td></tr>
+  <tr><td><kbd>Esc</kbd></td><td>그리기·선택·위치 찍기 취소</td><td><kbd>Space</kbd></td><td>시간대 애니메이션 재생/정지</td></tr>
+</table>
+<p>도구 키는 한글 입력 상태에서도 동작합니다.</p>
+
+<h2 id="compare">기존 프로그램과 대응</h2>
+<p>CAD 연동형 상수·하수 데스크톱 프로그램을 쓰던 분을 위한 대응표입니다.</p>
+<table>
+  <tr><th>기존 프로그램</th><th>물길에서</th><th>달라진 점</th></tr>
+  <tr><td>활성화 코드·설치</td><td>필요 없음</td><td>브라우저로 바로 엽니다</td></tr>
+  <tr><td>AutoCAD/CADIAN 연결, GEO 파일(DWGEOOUT 등)</td><td>Shapefile·GeoJSON·.inp 직접 열기</td><td>CAD 를 거치지 않습니다</td></tr>
+  <tr><td>배경지도 다운로드(DHMapDownloader)</td><td>왼쪽 패널 배경지도</td><td>실시간 타일(일반·위성)</td></tr>
+  <tr><td>지형 구성(XYZ 삼각망), 지반고 입력</td><td>위치·표고 보정 → 표고</td><td>지형 타일 또는 수치지형도 Shapefile 을 바로 사용</td></tr>
+  <tr><td>용도 생성 + 연결관 + 분담유량 입력</td><td>용도지역 분담유량</td><td>연결관을 손으로 잇지 않고 자동 배분, 산출표 CSV</td></tr>
+  <tr><td>링크 자동 분리</td><td>관로 위에 절점 찍기</td><td>같음</td></tr>
+  <tr><td>링크 자동 병합, 절점 병합</td><td>관망 정리 → 직렬 관로 병합 / 가까운 절점 병합</td><td>한 번에 일괄 처리</td></tr>
+  <tr><td>개체 ID 입력, 관로 번호 입력</td><td>관망 정리 → ID 일괄 재부여</td><td>제어 규칙 참조까지 함께 변경</td></tr>
+  <tr><td>일괄 등록, 관경 입력</td><td>구역 선택 + 오른쪽 패널 일괄 편집</td><td></td></tr>
+  <tr><td>CURVE / PATTERN / CONTROLS</td><td>데이터 메뉴의 표 편집기</td><td>실행 취소 가능</td></tr>
+  <tr><td>해석·시뮬레이션·범례</td><td>해석 실행, 주제도, 시계열 재생</td><td>화살표·색은 시간대별로 갱신</td></tr>
+  <tr><td>수리계산 + 검토 목록(하수 프로그램)</td><td>하수관 자동 설계 + 검토 목록</td><td>같은 판정 체계, 관경 자동 결정·SWMM 동적 검증 추가</td></tr>
+  <tr><td>프로젝트 자동 백업(.BAK)</td><td>자동 백업</td><td>편집할 때마다 자동</td></tr>
+  <tr><td>(없음)</td><td>수용가 자료로 관망 초안, 도로 따라 맞추기, 관망 검증, 소화용수</td><td>새 기능</td></tr>
+</table>
+<p>종·횡단 도면 작도, 수량 보고서, 보링·지하매설물·포장·가시설, 경계 폴리곤은 아직 없습니다.</p>
+
+<h2 id="limits">한계 · 주의</h2>
+<ul>
+  <li>수용가 초안과 하수 자동 설계는 <b>초기 검토용</b>입니다. 결과는 반드시 엔지니어가 확인하세요.</li>
+  <li>하수 설계는 가지형(수지상) 관망만 다룹니다. 환상 하수관·펌프 압송관·박스관은 아직 지원하지 않습니다.</li>
+  <li>설계 조건, 원단위, 첨두계수 기본값은 예시값입니다.</li>
+  <li>도로 자료는 OpenStreetMap 기준이라 신설 도로·사도가 빠질 수 있습니다. 공개 서버가 바쁘면 몇 분 뒤 다시 시도하세요.</li>
+  <li>지형 타일(약 15~30 m 해상도)은 개략값입니다. 정밀한 지반고는 수치지형도나 측량 성과로 보정하세요.</li>
+  <li>SWMM 엔진은 5.2 WebAssembly 빌드입니다. 공식 5.2.4 와 결과가 완전히 같다고 보장하지 않습니다.</li>
+</ul>
+
+<footer>물길 · 이 설명서는 앱과 함께 배포됩니다. 인쇄(Ctrl+P)하면 목차 없이 장마다 나눠 찍힙니다.</footer>
+</main>
+</div>
+</body>
+</html>

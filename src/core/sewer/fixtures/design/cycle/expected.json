@@ -1,0 +1,1 @@
+{"error":{"type":"ValueError","message":"순환 관망입니다. 첫 버전은 중력식 수지상 관망을 지원합니다."}}

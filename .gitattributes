@@ -1,0 +1,4 @@
+# 정답 벡터·샘플은 바이트 단위로 비교하므로 줄바꿈을 바꾸지 않는다
+src/core/sewer/fixtures/** -text
+*.inp -text
+*.rpt -text

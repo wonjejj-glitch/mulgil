@@ -1,0 +1,16 @@
+node_modules
+dist
+*.local
+.vite
+*.log
+.DS_Store
+
+# 이 앱과 별개인 프로젝트·실제 사업 자료 — 저장소에 올리지 않는다
+sewer_rehab/
+.pytest_cache/
+
+# 개인 도구 설정
+.claude/
+
+# GitHub Actions 가 빌드해 넣는 SWMM 5.2.4 엔진 (로컬에는 없음)
+src/core/swmm/engine/

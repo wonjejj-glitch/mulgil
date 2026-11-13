@@ -1,0 +1,132 @@
+[TITLE]
+Mulgil sample - small storm sewer
+EPSG:5186, CMS, dynamic wave, 1h design storm (50 mm/h)
+
+[OPTIONS]
+FLOW_UNITS           CMS
+INFILTRATION         HORTON
+FLOW_ROUTING         DYNWAVE
+LINK_OFFSETS         DEPTH
+START_DATE           01/01/2024
+START_TIME           00:00:00
+REPORT_START_DATE    01/01/2024
+REPORT_START_TIME    00:00:00
+END_DATE             01/01/2024
+END_TIME             03:00:00
+SWEEP_START          01/01
+SWEEP_END            12/31
+WET_STEP             00:05:00
+DRY_STEP             01:00:00
+REPORT_STEP          00:05:00
+ROUTING_STEP         00:00:15
+ALLOW_PONDING        NO
+MIN_SLOPE            0
+
+[RAINGAGES]
+;;Name  Format     Interval SCF Source
+RG1     INTENSITY  0:10     1.0 TIMESERIES STORM1
+
+[TIMESERIES]
+;;Name   Time  Value
+STORM1   0:00  20
+STORM1   0:10  45
+STORM1   0:20  80
+STORM1   0:30  110
+STORM1   0:40  60
+STORM1   0:50  25
+STORM1   1:00  0
+
+[SUBCATCHMENTS]
+;;Name Raingage Outlet Area  %Imperv Width Slope CurbLen
+S1     RG1      J1     1.2   65      150   1.5   0
+S2     RG1      J2     0.9   80      120   2.0   0
+S3     RG1      J3     1.6   55      180   1.0   0
+S4     RG1      J5     1.1   70      140   1.2   0
+
+[SUBAREAS]
+;;Subcatch N-Imperv N-Perv S-Imperv S-Perv PctZero RouteTo
+S1     0.013 0.15 1.5 5 25 OUTLET
+S2     0.013 0.15 1.5 5 25 OUTLET
+S3     0.013 0.15 1.5 5 25 OUTLET
+S4     0.013 0.15 1.5 5 25 OUTLET
+
+[INFILTRATION]
+;;Subcatch MaxRate MinRate Decay DryTime MaxInfil
+S1     50 5 4 7 0
+S2     50 5 4 7 0
+S3     50 5 4 7 0
+S4     50 5 4 7 0
+
+[JUNCTIONS]
+;;Name Elevation MaxDepth InitDepth SurDepth Aponded
+J1     30.0      2.0      0         0        0
+J2     29.4      2.0      0         0        0
+J3     28.9      2.0      0         0        0
+J4     28.0      2.5      0         0        0
+J5     28.6      2.0      0         0        0
+J6     27.5      2.5      0         0        0
+
+[OUTFALLS]
+;;Name Elevation Type Gated
+O1     26.0      FREE NO
+
+[CONDUITS]
+;;Name From To Length Roughness InOffset OutOffset InitFlow MaxFlow
+C1     J1   J2 120   0.013     0        0         0        0
+C2     J2   J4 110   0.013     0        0         0        0
+C3     J3   J4 100   0.013     0        0         0        0
+C4     J5   J6 130   0.013     0        0         0        0
+C5     J4   J6 90    0.013     0        0         0        0
+C6     J6   O1 80    0.013     0        0         0        0
+
+[XSECTIONS]
+;;Link Shape Geom1 Geom2 Geom3 Geom4 Barrels
+C1     CIRCULAR 0.45 0 0 0 1
+C2     CIRCULAR 0.45 0 0 0 1
+C3     CIRCULAR 0.45 0 0 0 1
+C4     CIRCULAR 0.45 0 0 0 1
+C5     CIRCULAR 0.60 0 0 0 1
+C6     CIRCULAR 0.60 0 0 0 1
+
+[REPORT]
+SUBCATCHMENTS ALL
+NODES ALL
+LINKS ALL
+
+[COORDINATES]
+;;Node X Y
+J1   234000 417200
+J2   234120 417200
+J3   234230 417320
+J4   234230 417200
+J5   234100 417060
+J6   234230 417060
+O1   234310 417060
+
+[VERTICES]
+;;Link X Y
+C4   234100 417060
+C5   234230 417130
+
+[Polygons]
+;;Subcatch X Y
+S1   233960 417250
+S1   234060 417250
+S1   234060 417150
+S1   233960 417150
+S2   234080 417250
+S2   234160 417250
+S2   234160 417150
+S2   234080 417150
+S3   234180 417380
+S3   234280 417380
+S3   234280 417270
+S3   234180 417270
+S4   234050 417110
+S4   234150 417110
+S4   234150 417010
+S4   234050 417010
+
+[SYMBOLS]
+;;Gage X Y
+RG1  233900 417300

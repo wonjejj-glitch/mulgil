@@ -1,0 +1,1 @@
+{"error":{"type":"ValueError","message":"첫 버전은 동일 절점 사이 병렬 관로를 지원하지 않습니다."}}

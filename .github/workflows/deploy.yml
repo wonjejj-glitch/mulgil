@@ -1,0 +1,75 @@
+# main 에 올리면: EPA SWMM 5.2.4 를 WebAssembly 로 빌드 → 검사·테스트 → 앱 빌드 → GitHub Pages 배포
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  swmm-wasm:
+    name: SWMM 5.2.4 → WASM
+    runs-on: ubuntu-latest
+    container: emscripten/emsdk:3.1.74
+    steps:
+      - name: Download official SWMM 5.2.4 source (USEPA)
+        run: curl -sSL https://github.com/USEPA/Stormwater-Management-Model/archive/refs/tags/v5.2.4.tar.gz | tar xz
+      - name: Compile
+        run: |
+          S=Stormwater-Management-Model-5.2.4/src/solver
+          mkdir -p out
+          emcc -O3 -w -I"$S/include" "$S"/*.c -o out/swmm5.mjs \
+            -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createSwmm \
+            -sENVIRONMENT=web,worker,node -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1048576 \
+            -sEXPORTED_FUNCTIONS=_swmm_run,_swmm_getVersion \
+            -sEXPORTED_RUNTIME_METHODS=FS,ccall \
+            -sSINGLE_FILE=1 -sFORCE_FILESYSTEM=1
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swmm-wasm
+          path: out/swmm5.mjs
+
+  build:
+    needs: swmm-wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: swmm-wasm
+          path: src/core/swmm/engine
+      - run: npm ci
+      - run: npm run lint
+      - name: Tests (SWMM engine tests run on the 5.2.4 build)
+        run: npm test
+      - name: Build
+        run: npm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
