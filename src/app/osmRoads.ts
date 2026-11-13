@@ -1,6 +1,6 @@
 /**
  * OpenStreetMap 도로 중심선 가져오기 (Overpass API). 보내는 정보는 영역 경계 좌표뿐이다.
- * 공개 서버가 자주 바쁘므로 서버 3곳을 차례로 시도하고, 같은 영역을 다시 요청하면 마지막 결과를 재사용한다.
+ * 공개 서버가 자주 바쁘므로 서버 5곳을 차례로 시도하고, 같은 영역을 다시 요청하면 마지막 결과를 재사용한다.
  */
 import type { LngLat } from '../core/model/types';
 
@@ -11,6 +11,8 @@ const OVERPASS_SERVERS = [
   'https://overpass-api.de/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.osm.jp/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
 ];
 
 /** [남, 서, 북, 동] */
@@ -64,8 +66,20 @@ async function writeStored(entry: Stored): Promise<void> {
   await withStore('readwrite', (s) => s.put(next, 'recent'));
 }
 
+/* 사용자가 넣은 도로 중심선(도로명주소 전자지도·수치지도 도로 레이어 등). 있으면 공개 서버 대신 이것을 쓴다. */
+let userRoads: { roads: LngLat[][]; name: string } | null = null;
+
+export function setUserRoads(roads: LngLat[][] | null, name = ''): void {
+  userRoads = roads ? { roads, name } : null;
+}
+
+export function userRoadsInfo(): { name: string; count: number } | null {
+  return userRoads ? { name: userRoads.name, count: userRoads.roads.length } : null;
+}
+
 export async function fetchOsmRoads(south: number, west: number, north: number, east: number): Promise<LngLat[][]> {
   const box: Box = [south, west, north, east];
+  if (userRoads) return userRoads.roads;
   if (cache && inside(box, cache.box)) return cache.roads;
   const stored = typeof indexedDB === 'undefined' ? null : await readStored(box);
   if (stored) {
@@ -76,7 +90,7 @@ export async function fetchOsmRoads(south: number, west: number, north: number, 
   const errors: string[] = [];
   for (const url of OVERPASS_SERVERS) {
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 60000);
+    const timer = window.setTimeout(() => controller.abort(), 40000);
     try {
       const response = await fetch(url, {
         method: 'POST',

@@ -17,6 +17,14 @@ interface DraftState {
   skipped: number[];
   crsLabel: string;
   mode: DraftMode;
+  /** 신규(수원부터 새로) / 보완(지금 열린 상수 관망에 비어 있는 곳만 잇기) */
+  build: 'new' | 'fill';
+  /** 보완: 기존 관로에서 이 거리(m) 안의 수용가는 이미 공급 중으로 본다 */
+  servedDistance: number;
+  /** 보완: 이미 공급 중이라 건너뛴 수용가 수 */
+  alreadyServed: number;
+  /** 직접 넣은 도로 중심선 파일 (없으면 OpenStreetMap) */
+  roadFile: string;
   source: LngLat | null;
   /** source 를 자동으로 정했는지 (종류를 바꾸면 다시 정해야 한다: 상수=가장 높은 곳, 하수=가장 낮은 곳). */
   sourceAuto: boolean;
@@ -52,6 +60,10 @@ export const useDraftStore = create<DraftState>()((set) => ({
   skipped: [],
   crsLabel: '',
   mode: 'water',
+  build: 'new',
+  servedDistance: 30,
+  alreadyServed: 0,
+  roadFile: '',
   source: null,
   sourceAuto: false,
   maxServiceDistance: 80,

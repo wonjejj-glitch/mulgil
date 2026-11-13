@@ -5,7 +5,7 @@ import type { SwmmRun } from '../core/swmm/swmmManager';
 export type SwmmNodeTheme = 'none' | 'depthRatio' | 'depth' | 'flooding' | 'inflow';
 export type SwmmLinkTheme = 'none' | 'capacity' | 'velocity' | 'flow';
 export type SwmmSelection = { kind: 'node' | 'link' | 'subcatch'; id: string } | null;
-export type SwmmBottomTab = 'chart' | 'table' | 'report';
+export type SwmmBottomTab = 'chart' | 'table' | 'review' | 'report';
 
 interface SwmmState {
   project: SwmmProject | null;

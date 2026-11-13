@@ -4,8 +4,10 @@ import { parseSewerProject } from '../sewer/validate';
 import { designSewer } from '../sewer/design';
 import { generateInp } from '../sewer/inp';
 import { runSwmm } from '../swmm/swmmRunner';
-import { DEFAULT_SEWER_DRAFT, DEFAULT_WATER_DRAFT, draftToSewerProject, draftToWaterModel, pickWaterDiameter } from './draftConvert';
-import { buildDraft, defaultDraftOptions, prepareRoads } from './networkDraft';
+import { addDraftToWaterModel, DEFAULT_SEWER_DRAFT, DEFAULT_WATER_DRAFT, draftToSewerProject, draftToWaterModel, pickWaterDiameter } from './draftConvert';
+import { addLink, addNode } from './networkEdit';
+import { createEmptyModel } from './types';
+import { buildDraft, defaultDraftOptions, nodeRoads, prepareRoads } from './networkDraft';
 import { plane } from './roadSnap';
 import type { LngLat } from './types';
 
@@ -131,6 +133,51 @@ describe('network draft', () => {
     const design = designSewer(project, {}, 'practical');
     const run = await runSwmm(generateInp(design.project));
     expect(run.report).not.toMatch(/ERROR \d+/);
+  });
+
+  it('gap-fill: grows from existing nodes and adds only new pipes to the current model', () => {
+    // 기존 관망: 아래 도로(y=0)를 따라 R1-E1-E2
+    const m = createEmptyModel();
+    addNode(m, 'reservoir', at(0, 0), 'R1');
+    addNode(m, 'junction', at(100, 0), 'E1');
+    addNode(m, 'junction', at(200, 0), 'E2');
+    addLink(m, 'pipe', 'R1', 'E1', [], 'EP1');
+    addLink(m, 'pipe', 'E1', 'E2', [], 'EP2');
+    const seeds = Object.values(m.nodes).map((n) => ({ id: n.id, position: n.position }));
+    const opts = { ...defaultDraftOptions('water', at(0, 0)), seeds };
+    const draft = buildDraft(prepareRoads(grid(), origin, opts.spacing), [{ id: 'N1', position: at(195, 205), demand: 8.64 }, { id: 'N2', position: at(105, 195), demand: 8.64 }], opts);
+    expect(draft.unserved).toHaveLength(0);
+    expect(draft.nodes.filter((n) => n.existingId).length).toBeGreaterThan(0);
+    // 새 관은 기존 절점끼리 잇지 않는다
+    for (const l of draft.links) expect(draft.nodes[l.from].existingId && draft.nodes[l.to].existingId).toBeFalsy();
+    // 가장 가까운 기존 절점(E1·E2, 수직 도로 x=100·200)에서 올라간다 → 총연장 약 300 m (0,0 에서 출발하면 400 m 이상)
+    expect(draft.stats.totalLength).toBeLessThan(330);
+
+    const before = { nodes: Object.keys(m.nodes).length, links: Object.keys(m.links).length };
+    const rep = addDraftToWaterModel(m, draft, DEFAULT_WATER_DRAFT);
+    expect(Object.keys(m.nodes).length).toBe(before.nodes + rep.junctions);
+    expect(Object.keys(m.links).length).toBe(before.links + rep.pipes);
+    expect(m.links.EP1.startNodeId).toBe('R1'); // 기존 관은 그대로
+    expect(rep.connectedTo.every((id) => id === 'E1' || id === 'E2' || id === 'R1')).toBe(true);
+    // 수요: 8.64 m³/일 × 2 = 0.2 L/s 가 어딘가(새 절점 또는 접속 절점)에 들어간다
+    const total = Object.values(m.nodes).reduce((s, n) => s + (n.type === 'junction' ? n.demand : 0), 0);
+    expect(total).toBeCloseTo(0.2, 3);
+  });
+
+  it('nodes crossing road lines so a user road file forms one connected network', () => {
+    // 교차점에 공통 점이 없는 격자 (선마다 끝점만 있음)
+    const raw = grid();
+    const before = buildDraft(prepareRoads(raw, origin, 15), [{ id: 'C', position: at(200, 205), demand: 1 }], defaultDraftOptions('water', at(0, 100)));
+    expect(before.stats.totalLength).toBeGreaterThan(0); // 원래 격자는 끝점이 겹쳐 일부는 이어져 있다
+    const crossOnly: LngLat[][] = [[at(0, 50), at(200, 50)], [at(103, -37), at(103, 150)]]; // 가운데서 X 자로만 만남
+    expect(() => buildDraft(prepareRoads(crossOnly, origin, 15), [{ id: 'C', position: at(103, 145), demand: 1 }], defaultDraftOptions('water', at(5, 50)))).toThrow();
+    const noded = nodeRoads(crossOnly);
+    expect(noded[0]).toHaveLength(3);
+    expect(noded[1]).toHaveLength(3);
+    const d = buildDraft(prepareRoads(noded, origin, 15), [{ id: 'C', position: at(103, 145), demand: 1 }], defaultDraftOptions('water', at(5, 50)));
+    expect(d.unserved).toHaveLength(0);
+    expect(d.stats.totalLength).toBeGreaterThan(180);
+    expect(d.stats.totalLength).toBeLessThan(220);
   });
 
   it('picks standard water diameters by velocity', () => {

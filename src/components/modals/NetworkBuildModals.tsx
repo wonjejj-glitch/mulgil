@@ -4,6 +4,9 @@
 import { Crosshair, Download, FileUp, GitMerge, Hash, LoaderCircle, MapPinned, Send, Spline, TriangleExclamationPoint, Wand2 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
+  addFillToNetwork,
+  clearRoadFiles,
+  loadRoadFiles,
   adoptWaterDraft,
   applyAllocation,
   applyCustomerMapping,
@@ -70,7 +73,9 @@ const CRS_OPTIONS: { value: ImportCrsChoice; label: string }[] = [
 
 function DraftDialog() {
   const s = useDraftStore();
+  const netNodes = useNetworkStore((n) => Object.keys(n.model.nodes).length);
   const fileInput = useRef<HTMLInputElement | null>(null);
+  const roadInput = useRef<HTMLInputElement | null>(null);
   const columns = [{ value: '-1', label: '(없음)' }, ...(s.table?.headers.map((h, i) => ({ value: String(i), label: h || `열 ${i + 1}` })) ?? [])];
   const setMap = (patch: Partial<ColumnMapping>) => s.mapping && applyCustomerMapping({ mapping: { ...s.mapping, ...patch } });
   const totalDemand = s.customers.reduce((a, c) => a + c.demand, 0);
@@ -151,10 +156,33 @@ function DraftDialog() {
       <section className="mt-4 border-t border-line pt-3">
         <h3 className="text-xs font-semibold text-ink">2. 만들 관망과 기준</h3>
         <div className="mt-1.5 flex flex-wrap items-end gap-2">
+          <Field label="만드는 방식" w="w-48">
+            <SelectField
+              value={s.build}
+              options={[
+                { value: 'new', label: '신규 — 수원부터 새 관망' },
+                { value: 'fill', label: `보완 — 지금 관망(절점 ${netNodes.toLocaleString()})에 잇기`, disabled: netNodes === 0 },
+              ]}
+              onChange={(v) => s.set({ build: v as 'new' | 'fill', result: null, ...(v === 'fill' ? { mode: 'water' as const, maxPipeLength: 300 } : {}) })}
+            />
+          </Field>
+          {s.build === 'fill' && (
+            <Field label="이미 공급 중으로 볼 거리 (m)" w="w-44">
+              <NumberField value={s.servedDistance} min={1} onCommit={(v) => s.set({ servedDistance: v, result: null })} />
+            </Field>
+          )}
+        </div>
+        {s.build === 'fill' && (
+          <Note>
+            지금 열린 상수 관망의 관로에서 위 거리 안에 있는 수용가는 이미 공급 중으로 보고 건너뜁니다. 나머지(관망이 비어 있는 곳)만 도로를 따라 가장 가까운 기존 절점에 잇고, 새 절점·관만
+            추가합니다(기존 관은 바꾸지 않음, Ctrl+Z 로 되돌리기).
+          </Note>
+        )}
+        <div className="mt-1.5 flex flex-wrap items-end gap-2">
           <Field label="종류" w="w-36">
             <SelectField
               value={s.mode}
-              options={[{ value: 'water', label: '상수 (배수관망)' }, { value: 'sewer', label: '하수 (오수 관거)' }]}
+              options={[{ value: 'water', label: '상수 (배수관망)' }, { value: 'sewer', label: '하수 (오수 관거)', disabled: s.build === 'fill' }]}
               onChange={(v) =>
                 s.set({ mode: v as typeof s.mode, maxPipeLength: v === 'sewer' ? 75 : 300, result: null, ...(s.sourceAuto ? { source: null, sourceAuto: false } : {}) })
               }
@@ -167,7 +195,7 @@ function DraftDialog() {
             <NumberField value={s.maxPipeLength} min={10} onCommit={(v) => s.set({ maxPipeLength: v, result: null })} />
           </Field>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className={`mt-2 flex flex-wrap items-center gap-2 ${s.build === 'fill' ? 'hidden' : ''}`}>
           <Button onClick={pickDraftSource}>
             <Crosshair size={13} />
             지도에서 {s.mode === 'water' ? '수원' : '방류구'} 위치 찍기
@@ -221,6 +249,35 @@ function DraftDialog() {
       </section>
 
       <section className="mt-4 border-t border-line pt-3">
+        <h3 className="text-xs font-semibold text-ink">도로 자료</h3>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <Button onClick={() => roadInput.current?.click()}>
+            <FileUp size={13} />
+            도로 중심선 파일 넣기 (.shp·.zip·.geojson)
+          </Button>
+          <input
+            ref={roadInput}
+            type="file"
+            multiple
+            accept=".shp,.dbf,.prj,.cpg,.shx,.zip,.geojson,.json"
+            className="hidden"
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = '';
+              if (files.length) void loadRoadFiles(files);
+            }}
+          />
+          <span className="text-[11px] text-ink-soft">{s.roadFile || '없음 → OpenStreetMap 공개 서버에서 받음'}</span>
+          {s.roadFile && (
+            <button type="button" className="text-[11px] text-accent hover:underline" onClick={clearRoadFiles}>
+              지우기
+            </button>
+          )}
+        </div>
+        <Note>공개 도로 서버가 바쁘거나 도로가 빠진 곳은 도로명주소 전자지도의 도로구간(도로중심선)이나 수치지도 도로 레이어를 넣으세요. 넣으면 그 자료만 씁니다.</Note>
+      </section>
+
+      <section className="mt-4 border-t border-line pt-3">
         <h3 className="text-xs font-semibold text-ink">3. 초안 만들기</h3>
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           <Button variant="primary" disabled={s.customers.length === 0 || s.busy !== null} onClick={() => void generateDraft()}>
@@ -234,7 +291,12 @@ function DraftDialog() {
                 <MapPinned size={13} />
                 지도에서 미리 보기
               </Button>
-              {s.mode === 'water' ? (
+              {s.build === 'fill' ? (
+                <Button variant="primary" onClick={addFillToNetwork}>
+                  <Spline size={13} />
+                  지금 관망에 추가
+                </Button>
+              ) : s.mode === 'water' ? (
                 <Button variant="primary" onClick={adoptWaterDraft}>
                   <Spline size={13} />
                   상수 관망으로 열기

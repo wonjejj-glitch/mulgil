@@ -32,6 +32,13 @@ export interface DraftOptions {
   uphillPenalty: number;
   /** 이보다 짧은 관은 하류 절점으로 합친다 (m, 기본 5). */
   minLinkLength?: number;
+  /**
+   * 보완 모드: 이미 있는 관망의 절점들. 주면 source 대신 이 절점들(가까운 도로 지점)에서 동시에 나무를 키워
+   * 비어 있는 수용가만 가장 가까운 기존 관망에 잇는다.
+   */
+  seeds?: { id: string; position: LngLat }[];
+  /** 기존 절점에서 도로까지 이 거리(m) 안이어야 접속점으로 쓴다 (기본 60). */
+  seedSnap?: number;
 }
 
 export function defaultDraftOptions(mode: DraftMode, source: LngLat): DraftOptions {
@@ -76,6 +83,8 @@ export interface DraftNode {
   demand: number;
   customers: string[];
   isSource: boolean;
+  /** 보완 모드에서 이 절점이 이어지는 기존 관망 절점 ID */
+  existingId?: string;
   ground: number | null;
 }
 
@@ -158,8 +167,22 @@ export function buildDraft(prepared: PreparedRoads, customers: Customer[], optio
 
   // 수원 → 가장 가까운 도로
   const srcXY = P.to(options.source);
-  const src = nearestVertex(srcXY, 2000);
-  if (!src) throw new Error('수원·방류구 위치에서 2 km 안에 도로가 없습니다. 위치를 다시 고르세요.');
+  // 뿌리: 신규는 수원(방류구) 하나, 보완은 기존 관망 절점들
+  const rootId = new Map<number, string | undefined>();
+  let sourceSnap = 0;
+  if (options.seeds && options.seeds.length > 0) {
+    for (const s of options.seeds) {
+      const hit = nearestVertex(P.to(s.position), options.seedSnap ?? 60);
+      if (hit && !rootId.has(hit.v)) rootId.set(hit.v, s.id);
+    }
+    if (rootId.size === 0) throw new Error('기존 관망 절점 근처(60 m)에 도로가 없습니다. 도로 자료 영역이나 관망 위치를 확인하세요.');
+  } else {
+    const src = nearestVertex(srcXY, 2000);
+    if (!src) throw new Error('수원·방류구 위치에서 2 km 안에 도로가 없습니다. 위치를 다시 고르세요.');
+    rootId.set(src.v, undefined);
+    sourceSnap = src.d;
+  }
+  const isRoot = (v: number) => rootId.has(v);
 
   // 나무에서 각 꼭짓점까지의 비용 (Dijkstra, 나무가 커질 때마다 새 부분에서 이어서 푼다).
   // 하수는 흐름 방향(먼 쪽 → 나무 쪽)으로 오르막이면 벌점.
@@ -187,7 +210,7 @@ export function buildDraft(prepared: PreparedRoads, customers: Customer[], optio
       }
     }
   };
-  grow([src.v]);
+  grow([...rootId.keys()]);
 
   // 수용가 → 도로 접속점
   const demandAt = new Map<number, { demand: number; ids: string[] }>();
@@ -217,9 +240,9 @@ export function buildDraft(prepared: PreparedRoads, customers: Customer[], optio
   // 나무까지의 최소 경로를 붙인다. 최단 경로 나무보다 총연장이 짧고 같은 길을 두 번 깔지 않는다.
   const parent = new Int32Array(n).fill(-1);
   const inTree = new Uint8Array(n);
-  inTree[src.v] = 1;
+  for (const r of rootId.keys()) inTree[r] = 1;
   const pending = new Set(demandAt.keys());
-  pending.delete(src.v);
+  for (const r of rootId.keys()) pending.delete(r);
   while (pending.size > 0) {
     let best = -1;
     for (const t of pending) if (best < 0 || distTo[t] < distTo[best]) best = t;
@@ -234,10 +257,10 @@ export function buildDraft(prepared: PreparedRoads, customers: Customer[], optio
     grow(added);
   }
   const childCount = new Int32Array(n);
-  for (let v = 0; v < n; v++) if (inTree[v] && v !== src.v) childCount[parent[v]]++;
+  for (let v = 0; v < n; v++) if (inTree[v] && !isRoot(v)) childCount[parent[v]]++;
 
   // 절점이 될 꼭짓점: 수원, 수용가 접속점, 분기점(자식 2개 이상), 말단(자식 0)
-  const isKey = (v: number) => v === src.v || demandAt.has(v) || childCount[v] !== 1;
+  const isKey = (v: number) => isRoot(v) || demandAt.has(v) || childCount[v] !== 1;
   const keyIndex = new Map<number, number>();
   const nodes: DraftNode[] = [];
   const addNode = (v: number | null, xy: XY, isSource: boolean): number => {
@@ -249,20 +272,21 @@ export function buildDraft(prepared: PreparedRoads, customers: Customer[], optio
       demand: slot?.demand ?? 0,
       customers: slot?.ids ?? [],
       isSource,
+      ...(v !== null && rootId.get(v) !== undefined ? { existingId: rootId.get(v) } : {}),
       ground: v !== null && ground ? (ground[v] ?? null) : null,
     });
     if (v !== null) keyIndex.set(v, key);
     return key;
   };
-  addNode(src.v, graph.pts[src.v], true);
-  for (let v = 0; v < n; v++) if (inTree[v] && v !== src.v && isKey(v)) addNode(v, graph.pts[v], false);
+  for (const r of rootId.keys()) addNode(r, graph.pts[r], true);
+  for (let v = 0; v < n; v++) if (inTree[v] && !isRoot(v) && isKey(v)) addNode(v, graph.pts[v], false);
 
   // 절점 사이 사슬 → 관 (길면 나눈다)
   const links: DraftLink[] = [];
   const chainLength = (path: XY[]) => path.reduce((s, p, i) => (i === 0 ? 0 : s + dist(path[i - 1], p)), 0);
   // 나누면서 생기는 절점도 keyIndex 에 들어가므로, 처음 목록으로만 돈다
   for (const [v, key] of [...keyIndex]) {
-    if (v === src.v) continue;
+    if (isRoot(v)) continue;
     const chain: number[] = [v];
     let u = parent[v];
     while (!keyIndex.has(u)) {
@@ -355,7 +379,92 @@ export function buildDraft(prepared: PreparedRoads, customers: Customer[], optio
       totalDemand,
       servedDemand,
       totalLength: links.reduce((s, l) => s + l.length, 0),
-      sourceSnap: src.d,
+      sourceSnap,
     },
   };
+}
+
+/**
+ * 도로 선끼리 교차하는 곳에 공통 꼭짓점을 넣는다 (noding). OpenStreetMap 은 교차점에서 점을 공유하지만
+ * 사용자가 넣은 도로 중심선(SHP 등)은 교차점이 끊겨 있지 않은 경우가 많아 그대로 쓰면 도로망이 이어지지 않는다.
+ * 끝점이 다른 선 위 tol(m) 안에 있으면 그 자리도 잇는다(T자).
+ */
+export function nodeRoads(roads: LngLat[][], tol = 0.5): LngLat[][] {
+  if (roads.length === 0) return roads;
+  const P = plane(roads[0][0]);
+  const lines = roads.map((r) => r.map(P.to));
+  type Seg = { line: number; i: number; a: XY; b: XY };
+  const segs: Seg[] = [];
+  for (let l = 0; l < lines.length; l++) for (let i = 0; i + 1 < lines[l].length; i++) segs.push({ line: l, i, a: lines[l][i], b: lines[l][i + 1] });
+  const cell = 50;
+  const grid = new Map<string, number[]>();
+  segs.forEach((s, k) => {
+    for (let x = Math.floor((Math.min(s.a[0], s.b[0]) - tol) / cell); x <= Math.floor((Math.max(s.a[0], s.b[0]) + tol) / cell); x++)
+      for (let y = Math.floor((Math.min(s.a[1], s.b[1]) - tol) / cell); y <= Math.floor((Math.max(s.a[1], s.b[1]) + tol) / cell); y++) {
+        const key = `${x},${y}`;
+        const list = grid.get(key);
+        if (list) list.push(k);
+        else grid.set(key, [k]);
+      }
+  });
+  // 선분마다 끼워 넣을 점 (선분 위 비율 t 와 좌표)
+  const inserts = new Map<number, { t: number; p: XY }[]>();
+  const add = (k: number, t: number, p: XY) => {
+    if (t <= 1e-9 || t >= 1 - 1e-9) return;
+    const list = inserts.get(k) ?? [];
+    list.push({ t, p });
+    inserts.set(k, list);
+  };
+  const seen = new Set<string>();
+  for (const bucket of grid.values()) {
+    for (let x = 0; x < bucket.length; x++)
+      for (let y = x + 1; y < bucket.length; y++) {
+        const k1 = Math.min(bucket[x], bucket[y]);
+        const k2 = Math.max(bucket[x], bucket[y]);
+        const s1 = segs[k1];
+        const s2 = segs[k2];
+        if (s1.line === s2.line) continue;
+        const pk = `${k1},${k2}`;
+        if (seen.has(pk)) continue;
+        seen.add(pk);
+        const rx = s1.b[0] - s1.a[0], ry = s1.b[1] - s1.a[1];
+        const sx = s2.b[0] - s2.a[0], sy = s2.b[1] - s2.a[1];
+        const den = rx * sy - ry * sx;
+        if (Math.abs(den) > 1e-12) {
+          const qx = s2.a[0] - s1.a[0], qy = s2.a[1] - s1.a[1];
+          const t = (qx * sy - qy * sx) / den;
+          const u = (qx * ry - qy * rx) / den;
+          if (t >= -1e-9 && t <= 1 + 1e-9 && u >= -1e-9 && u <= 1 + 1e-9) {
+            const p: XY = [s1.a[0] + rx * t, s1.a[1] + ry * t];
+            add(k1, t, p);
+            add(k2, u, p);
+            continue;
+          }
+        }
+        // T자: 한 선분의 끝점이 다른 선분 가운데 tol 안
+        for (const [s, o, ko] of [[s1, s2, k2], [s2, s1, k1]] as const) {
+          for (const end of [s.a, s.b]) {
+            const dx = o.b[0] - o.a[0], dy = o.b[1] - o.a[1];
+            const len2 = dx * dx + dy * dy;
+            if (len2 === 0) continue;
+            const t = ((end[0] - o.a[0]) * dx + (end[1] - o.a[1]) * dy) / len2;
+            if (t <= 0 || t >= 1) continue;
+            const q: XY = [o.a[0] + dx * t, o.a[1] + dy * t];
+            if (dist(q, end) <= tol) add(ko, t, end);
+          }
+        }
+      }
+  }
+  if (inserts.size === 0) return roads;
+  const segIndex = new Map<string, number>();
+  segs.forEach((s, k) => segIndex.set(`${s.line},${s.i}`, k));
+  return lines.map((line, l) => {
+    const out: XY[] = [line[0]];
+    for (let i = 0; i + 1 < line.length; i++) {
+      const extra = inserts.get(segIndex.get(`${l},${i}`)!);
+      if (extra) for (const e of extra.sort((a, b) => a.t - b.t)) out.push(e.p);
+      out.push(line[i + 1]);
+    }
+    return out.map(P.from);
+  });
 }

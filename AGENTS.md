@@ -217,6 +217,11 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
 - **내보내기**(`core/io/gisExport.ts`): STORE zip(CRC32), Shapefile(점·폴리라인, dbf UTF-8 + .cpg, prj 는 WGS84·5186 WKT), DXF R12. 우리 Shapefile 리더로 왕복 테스트.
 - **하수 설계기준 프리셋**(`core/sewer/standards.ts`): 부산 2026 오수관로. `designSewer(…, mode, rules)` 의 PracticalRules(minFlow·dropPipeAt·maxDrop)는 practical 모드에서만.
   원문 추출본은 세션 스크래치(저장소 밖). 우수·합류식 값은 그 문서에 없다.
+- **관망 초안 보완 모드**: `DraftOptions.seeds`(기존 절점들)를 주면 여러 뿌리에서 동시에 탐욕 스타이너 나무를 키운다(DraftNode.existingId).
+  `addDraftToWaterModel` 은 새 절점·관만 지금 모델에 추가(commit, 실행 취소 가능). 기존 관로 servedDistance 안 수용가는 draftActions 에서 뺀다. 상수만.
+- **도로 자료**: `osmRoads.ts` Overpass 5개 서버(각 40초) + IndexedDB 30일 캐시 + `setUserRoads`(사용자 도로 중심선 파일).
+  사용자 파일은 `nodeRoads`(교차점·T자 접속점 삽입)로 이은 뒤 쓴다. 2026-11 중 Overpass 공개 서버가 자주 전부 실패했다(406/502/504/시간 초과).
+- **SWMM 하수 검토**(`core/swmm/review.ts`, SWMM 도크 '하수 검토' 탭): 월류·지표 도달·만관·최대/최소 유속(전 시간 최대, 흐름 없는 관 제외).
 - **배포·SWMM 5.2.4**: 저장소 https://github.com/wonjejj-glitch/mulgil (공개), 사이트 https://wonjejj-glitch.github.io/mulgil/ .
   main 에 push 하면 `.github/workflows/deploy.yml` 이 ① emscripten/emsdk 컨테이너에서 USEPA 공식 v5.2.4 소스를 `swmm5.mjs`(SINGLE_FILE ES 모듈)로 컴파일
   ② `src/core/swmm/engine/` 에 넣고 lint·test(엔진 테스트가 5.2.4 로 돔)·build(BASE_PATH=/mulgil/) ③ Pages 배포. 배포본 보고서 머리글 "VERSION 5.2 (Build 5.2.4)" 확인.

@@ -5,9 +5,11 @@
 import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import { guessMapping, parseCsv, readCustomers, type ColumnMapping, type Customer } from '../core/io/customerCsv';
 import { loadShapefiles } from '../core/io/loadShapefiles';
-import { draftToSewerProject, draftToWaterModel } from '../core/model/draftConvert';
+import { addDraftToWaterModel, draftToSewerProject, draftToWaterModel } from '../core/model/draftConvert';
+import { linkPath } from '../core/model/networkEdit';
+import { plane, RoadGraph } from '../core/model/roadSnap';
 import { allocateDemand, allocationCsv, m3dToFlowUnits } from '../core/model/landUse';
-import { buildDraft, defaultDraftOptions, prepareRoads } from '../core/model/networkDraft';
+import { buildDraft, defaultDraftOptions, nodeRoads, prepareRoads } from '../core/model/networkDraft';
 import { mergeNearbyNodes, mergeSeriesPipes, renumber, type RenumberOptions } from '../core/model/networkTools';
 import type { LngLat, SourceCrs } from '../core/model/types';
 import { parcelsOf, useDraftStore } from '../store/useDraftStore';
@@ -19,7 +21,7 @@ import { baseName, downloadText } from '../utils/files';
 import { bboxOf, CRS_DEFS, detectCrs, toWgs84, type ImportCrsChoice } from '../utils/geoMath';
 import { adoptModel, fitToNetwork } from './actions';
 import { readBackup } from './autoBackup';
-import { fetchOsmRoads } from './osmRoads';
+import { fetchOsmRoads, setUserRoads } from './osmRoads';
 import { sampleTerrainTiles } from './terrainFetch';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -81,13 +83,46 @@ export function pickDraftSource(): void {
 /** 도로·지형을 받아 초안을 만든다. 수원을 안 고르면 상수는 가장 높은 수용가, 하수는 가장 낮은 수용가 근처로 정한다. */
 export async function generateDraft(): Promise<void> {
   const store = useDraftStore.getState();
-  const { customers, mode, maxServiceDistance, maxPipeLength } = store;
+  const { mode, maxServiceDistance, maxPipeLength } = store;
+  let { customers } = store;
   if (customers.length === 0 || store.busy) return;
   const warnings: string[] = [];
-  store.set({ busy: '준비 중…', error: null, result: null });
+  store.set({ busy: '준비 중…', error: null, result: null, alreadyServed: 0 });
   try {
+    // 보완 모드: 지금 열린 상수 관망에 비어 있는 곳만 잇는다
+    let seeds: { id: string; position: LngLat }[] | undefined;
+    const reach: LngLat[] = [];
+    if (store.build === 'fill') {
+      if (mode !== 'water') throw new Error('보완 모드는 지금 상수관망에만 쓸 수 있습니다. 하수는 신규로 만든 뒤 하수 설계에서 다루세요.');
+      const model = useNetworkStore.getState().model;
+      const nodes = Object.values(model.nodes);
+      if (nodes.length === 0) throw new Error('보완하려면 먼저 기존 관망(.inp 등)을 여세요.');
+      // 기존 관로에서 servedDistance 안의 수용가는 이미 공급 중으로 보고 뺀다
+      const P = plane(nodes[0].position);
+      const pipes = new RoadGraph(Math.max(store.servedDistance, 20));
+      for (const l of Object.values(model.links)) {
+        let prev = -1;
+        for (const p of linkPath(model, l)) {
+          const v = pipes.vertex(P.to(p));
+          if (prev >= 0) pipes.addSegment(prev, v);
+          prev = v;
+        }
+      }
+      const before = customers.length;
+      customers = customers.filter((c) => !pipes.nearest(P.to(c.position), store.servedDistance));
+      store.set({ alreadyServed: before - customers.length });
+      warnings.push(`기존 관로 ${store.servedDistance} m 안의 수용가 ${before - customers.length}곳은 이미 공급 중으로 보고 뺐습니다.`);
+      if (customers.length === 0) throw new Error(`모든 수용가가 기존 관로 ${store.servedDistance} m 안에 있습니다. 보완할 곳이 없습니다.`);
+      seeds = nodes.map((n) => ({ id: n.id, position: n.position }));
+      // 도로 자료 영역에 가장 가까운 기존 관로 지점도 넣는다 (기존 관망이 수용가에서 멀리 있어도 이을 수 있게)
+      for (const c of customers) {
+        const near = pipes.nearest(P.to(c.position), 2000);
+        if (near) reach.push(P.from(near.q));
+      }
+    }
     // 자동으로 정한 위치는 매번 다시 정한다 (상수↔하수를 바꾸면 기준이 반대)
     let source = store.sourceAuto ? null : store.source;
+    if (seeds) source = customers[0].position; // 보완은 수원 대신 기존 관망에서 키운다 (도로 영역 기준점으로만 씀)
     if (!source) {
       store.set({ busy: '수원 위치를 정하려고 수용가 지반고를 읽는 중…' });
       const z = await sampleTerrainTiles(customers.map((c) => c.position));
@@ -97,13 +132,13 @@ export async function generateDraft(): Promise<void> {
       warnings.push(`${mode === 'water' ? '수원' : '방류구'} 위치를 지정하지 않아 ${mode === 'water' ? '가장 높은' : '가장 낮은'} 수용가(${customers[k].id}, 지반고 ${z[k].toFixed(1)} m) 근처로 정했습니다.`);
       useDraftStore.getState().set({ source, sourceAuto: true });
     }
-    const box = bboxOf([...customers.map((c) => c.position), source])!;
+    const box = bboxOf([...customers.map((c) => c.position), source, ...reach])!;
     const padLat = 400 / 110540;
     const padLng = 400 / (111320 * Math.cos((box[1] * Math.PI) / 180));
     store.set({ busy: '도로 자료(OpenStreetMap) 받는 중…' });
     const roads = await fetchOsmRoads(box[1] - padLat, box[0] - padLng, box[3] + padLat, box[2] + padLng);
     if (roads.length === 0) throw new Error('이 영역의 도로 자료가 없습니다.');
-    const options = { ...defaultDraftOptions(mode, source), maxServiceDistance, maxPipeLength };
+    const options = { ...defaultDraftOptions(mode, source), maxServiceDistance, maxPipeLength, seeds };
     const prepared = prepareRoads(roads, source, options.spacing);
     let ground: number[] | undefined;
     try {
@@ -134,6 +169,24 @@ export function adoptWaterDraft(): void {
   s.set({ overlay: false });
   adoptModel(model, `${name}.inp`, 'WGS84 (초안)', s.warnings);
   useUIStore.getState().openModal(null);
+}
+
+/** 보완 모드 결과를 지금 관망에 더한다 (실행 취소 가능). */
+export function addFillToNetwork(): void {
+  const s = useDraftStore.getState();
+  if (!s.result) return;
+  let report: ReturnType<typeof addDraftToWaterModel> | null = null;
+  useNetworkStore.getState().commit((draft) => {
+    report = addDraftToWaterModel(draft, s.result!, s.water);
+  });
+  s.set({ overlay: false, result: null });
+  useUIStore.getState().openModal(null);
+  const r = report as ReturnType<typeof addDraftToWaterModel> | null;
+  useUIStore.getState().pushToast({
+    level: 'success',
+    title: `관망 보완 — 절점 ${r?.junctions ?? 0}개 · 관 ${r?.pipes ?? 0}개 추가`,
+    message: `기존 절점 ${r?.connectedTo.length ?? 0}곳에 이었습니다${r && r.demandAddedTo.length > 0 ? `, 접속 절점 ${r.demandAddedTo.length}곳에 수요를 더했습니다` : ''}. Ctrl+Z 로 되돌릴 수 있습니다. 관경·연결은 검토하세요.`,
+  });
 }
 
 export function sendSewerDraft(): void {
@@ -294,4 +347,45 @@ export async function restoreBackup(): Promise<void> {
   }
   adoptModel(b.model, b.fileName ?? '복원된 관망', '백업', []);
   fitToNetwork();
+}
+
+/* ------------------------------------------------------------------ 도로 중심선 직접 넣기 */
+
+/** 도로 중심선 파일(.shp/.zip/.geojson)을 읽어 공개 도로 서버 대신 쓴다. */
+export async function loadRoadFiles(files: File[]): Promise<void> {
+  const store = useDraftStore.getState();
+  try {
+    let collection: FeatureCollection;
+    let declared: string | null = null;
+    const geo = files.find((f) => /\.(geo)?json$/i.test(f.name));
+    if (geo) collection = JSON.parse(await geo.text()) as FeatureCollection;
+    else {
+      const set = await loadShapefiles(await Promise.all(files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() }))));
+      collection = set.collection;
+      declared = set.crs;
+    }
+    const lines: number[][][] = [];
+    for (const f of collection.features) {
+      const g = f.geometry;
+      if (g?.type === 'LineString') lines.push(g.coordinates);
+      else if (g?.type === 'MultiLineString') lines.push(...g.coordinates);
+    }
+    if (lines.length === 0) throw new Error('선(도로 중심선) 도형이 없습니다.');
+    const sample = lines.slice(0, 50).flatMap((l) => l.slice(0, 2).map((c) => [c[0], c[1]] as [number, number]));
+    const code = declared && (declared === 'wgs84' || declared in CRS_DEFS) ? declared : detectCrs(sample);
+    if (code === 'local') throw new Error('도로 자료의 좌표계를 알 수 없습니다. .prj 파일을 함께 넣어 주세요.');
+    const crs: SourceCrs = code === 'wgs84' ? { kind: 'wgs84' } : { kind: 'epsg', code };
+    // 교차점에 공통 점이 없는 자료가 많아 교차점·T자 접속점을 넣어 도로망을 잇는다
+    const roads = nodeRoads(lines.map((l) => l.map((c) => toWgs84(crs, [c[0], c[1]]) as LngLat)));
+    const name = files.map((f) => f.name).join(', ');
+    setUserRoads(roads, name);
+    store.set({ roadFile: `${name} · 선 ${roads.length.toLocaleString()}개`, error: null, result: null });
+  } catch (e) {
+    store.set({ error: errorText(e) });
+  }
+}
+
+export function clearRoadFiles(): void {
+  setUserRoads(null);
+  useDraftStore.getState().set({ roadFile: '', result: null });
 }

@@ -4,7 +4,10 @@
  */
 import { wgs84ToEpsg } from '../../utils/geoMath';
 import { defaultConstraints, defaultOptions, type SewerProject } from '../sewer/types';
+import { m3dToFlowUnits } from './landUse';
+import { addLink, nextId } from './networkEdit';
 import type { DraftResult } from './networkDraft';
+import { defaultRoughness, FEET_PER_METER, isUsUnits } from './units';
 import { createEmptyModel, type NetworkModel } from './types';
 
 export interface WaterDraftOptions {
@@ -140,4 +143,66 @@ export function draftToSewerProject(draft: DraftResult, o: SewerDraftOptions, na
     conduits.push({ ...conduits[0], id: `P${pad(conduits.length + 1)}`, upstream: collector.id, downstream: outfall.id, length: OUTFALL_LINK });
   }
   return { schema_version: 1, name, nodes, conduits, catchments: [], options: defaultOptions(), constraints: defaultConstraints() };
+}
+
+export interface GapFillReport {
+  junctions: number;
+  pipes: number;
+  /** 기존 절점 중 새 관이 이어진 곳 */
+  connectedTo: string[];
+  /** 접속점에 바로 붙은 수용가 수요를 더한 기존 절점 */
+  demandAddedTo: string[];
+}
+
+/**
+ * 보완 모드 결과를 지금 관망(model)에 더한다 (immer draft 에서 호출). 기존 절점·관은 바꾸지 않고
+ * 새 절점·관만 추가하며, 새 관은 기존 절점에서 시작한다. 관경은 수원 쪽 흐름 방향 기준 유속으로 고른다.
+ */
+export function addDraftToWaterModel(model: NetworkModel, draft: DraftResult, o: WaterDraftOptions): GapFillReport {
+  const us = isUsUnits(model.options.flowUnits);
+  const ids = new Map<number, string>();
+  const report: GapFillReport = { junctions: 0, pipes: 0, connectedTo: [], demandAddedTo: [] };
+  for (const nd of draft.nodes) {
+    if (nd.existingId) {
+      ids.set(nd.key, nd.existingId);
+      const existing = model.nodes[nd.existingId];
+      if (nd.demand > 0 && existing?.type === 'junction') {
+        existing.demand = Math.round((existing.demand + m3dToFlowUnits(nd.demand, model.options.flowUnits)) * 10000) / 10000;
+        report.demandAddedTo.push(existing.id);
+      }
+      continue;
+    }
+    const id = nextId('J', model.nodes);
+    ids.set(nd.key, id);
+    const ground = nd.ground ?? 0;
+    model.nodes[id] = {
+      id,
+      type: 'junction',
+      position: nd.position,
+      elevation: Math.round((us ? ground * FEET_PER_METER : ground) * 100) / 100,
+      demand: Math.round(m3dToFlowUnits(nd.demand, model.options.flowUnits) * 10000) / 10000,
+      pattern: '',
+    };
+    report.junctions++;
+  }
+  const roughness = model.options.headloss === 'H-W' ? o.roughness : defaultRoughness(model.options.headloss);
+  for (const l of draft.links) {
+    const start = ids.get(l.to);
+    const end = ids.get(l.from);
+    if (!start || !end) continue;
+    // 기존 절점 쪽 끝은 도로 접속점을 꺾임점으로 남겨 관이 도로를 따라 기존 절점에 닿게 한다
+    const reversed = [...l.path].reverse();
+    const startPos = model.nodes[start].position;
+    const inner = reversed.slice(1, -1);
+    const head = reversed[0];
+    const vertices = draft.nodes[l.to].existingId && Math.hypot(head[0] - startPos[0], head[1] - startPos[1]) > 1e-6 ? [head, ...inner] : inner;
+    const link = addLink(model, 'pipe', start, end, vertices);
+    if (!link || link.type !== 'pipe') continue;
+    const mm = pickWaterDiameter((l.carried / 86400) * o.peakFactor, o.designVelocity, o.minDiameter);
+    link.diameter = us ? Math.round((mm / 25.4) * 10) / 10 : mm;
+    link.roughness = roughness;
+    report.pipes++;
+    if (draft.nodes[l.to].existingId && !report.connectedTo.includes(start)) report.connectedTo.push(start);
+  }
+  return report;
 }

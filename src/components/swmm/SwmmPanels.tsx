@@ -12,11 +12,12 @@ import {
   type SwmmOutput,
 } from '../../core/swmm/outReader';
 import { routingOf } from '../../core/swmm/inpReader';
+import { DEFAULT_SWMM_REVIEW, reviewSwmm, SWMM_REVIEW_LABELS, type SwmmReviewCriteria, type SwmmReviewHit, type SwmmReviewKind } from '../../core/swmm/review';
 import { formatNumber } from '../../core/model/units';
 import { useSwmmStore, type SwmmBottomTab } from '../../store/useSwmmStore';
 import { useUIStore } from '../../store/useUIStore';
 import { toCss, type ThematicScale } from '../../utils/colorScales';
-import { Button, FieldRow, Section, SelectField } from '../ui/fields';
+import { Button, FieldRow, NumberField, Section, SelectField } from '../ui/fields';
 import { SWMM_LINK_THEMES, SWMM_NODE_THEMES, useSwmmThematic } from './swmmThematic';
 
 const NODE_KIND = { junction: '절점', outfall: '방류구', storage: '저류조', divider: '분류기' } as const;
@@ -423,6 +424,87 @@ function ReportTab() {
   );
 }
 
+
+const REVIEW_KINDS: SwmmReviewKind[] = ['flooding', 'surface', 'fullPipe', 'highVelocity', 'lowVelocity'];
+
+/** 해석 결과 검토: 월류·지표 도달·만관·유속 기준 위반 목록. 항목을 누르면 지도에서 그 객체로 가고 그 시각으로 바뀐다. */
+function ReviewTab({ output }: { output: SwmmOutput }) {
+  const project = useSwmmStore((s) => s.project)!;
+  const [criteria, setCriteria] = useState<SwmmReviewCriteria>(DEFAULT_SWMM_REVIEW);
+  const [filter, setFilter] = useState<SwmmReviewKind | 'all'>('all');
+  const hits = useMemo(() => reviewSwmm(project, output, criteria), [project, output, criteria]);
+  const shown = filter === 'all' ? hits : hits.filter((h) => h.kind === filter);
+  const vUnit = project.us ? 'ft/s' : 'm/s';
+  const focus = (h: SwmmReviewHit) => {
+    const swmm = useSwmmStore.getState();
+    swmm.select({ kind: h.target, id: h.id });
+    swmm.setPeriod(h.period);
+    const nodeOf = (id: string) => project.nodes.find((n) => n.id === id);
+    let pos = h.target === 'node' ? nodeOf(h.id)?.position : undefined;
+    if (h.target === 'link') {
+      const l = project.links.find((x) => x.id === h.id);
+      const a = l && nodeOf(l.from);
+      const b = l && nodeOf(l.to);
+      if (a && b) pos = [(a.position[0] + b.position[0]) / 2, (a.position[1] + b.position[1]) / 2];
+    }
+    if (pos) useUIStore.getState().flyTo(pos, 17);
+  };
+  const fmt = (h: SwmmReviewHit) =>
+    h.kind === 'flooding'
+      ? `최대 월류 ${formatNumber(h.value, 4)} ${output.flowUnits} · ${formatNumber(h.hours, 2)} h`
+      : h.kind === 'surface'
+        ? `최대 수심 ${formatNumber(h.value, 2)} · ${formatNumber(h.hours, 2)} h`
+        : h.kind === 'fullPipe'
+          ? `최대 수심비 ${formatNumber(h.value, 2)} · 만관 ${formatNumber(h.hours, 2)} h`
+          : `최대 유속 ${formatNumber(h.value, 2)} ${vUnit}`;
+  return (
+    <div className="flex h-full min-h-0 flex-col p-2 text-xs">
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="w-24">
+          <span className="text-[10px] text-ink-muted">최소 유속 ({vUnit})</span>
+          <NumberField value={criteria.minVelocity} min={0} onCommit={(v) => setCriteria({ ...criteria, minVelocity: v })} />
+        </label>
+        <label className="w-24">
+          <span className="text-[10px] text-ink-muted">최대 유속 ({vUnit})</span>
+          <NumberField value={criteria.maxVelocity} min={0} onCommit={(v) => setCriteria({ ...criteria, maxVelocity: v })} />
+        </label>
+        <label className="w-28">
+          <span className="text-[10px] text-ink-muted">만관 판정 수심비</span>
+          <NumberField value={criteria.fullRatio} min={0} onCommit={(v) => setCriteria({ ...criteria, fullRatio: v })} />
+        </label>
+        <div className="flex flex-wrap gap-1" role="tablist" aria-label="하수 검토 유형">
+          {[{ k: 'all' as const, label: '전체', n: hits.length }, ...REVIEW_KINDS.map((k) => ({ k, label: SWMM_REVIEW_LABELS[k], n: hits.filter((h) => h.kind === k).length }))].map((chip) => (
+            <button
+              key={chip.k}
+              type="button"
+              role="tab"
+              aria-selected={filter === chip.k}
+              onClick={() => setFilter(chip.k)}
+              className={`rounded border px-1.5 py-0.5 text-[11px] ${filter === chip.k ? 'border-accent bg-accent/15 text-ink' : 'border-line text-ink-soft hover:text-ink'}`}
+            >
+              {chip.label} <span className={chip.n > 0 && chip.k !== 'all' ? 'text-[#f3a5a5]' : ''}>{chip.n}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="mt-1 text-[10px] text-ink-muted">
+        유속 기본 0.6~3.0 m/s (오수관로 기준 — 우수관은 사업 기준으로 바꾸세요). 최소 유속은 전 시간 최대 유속으로 판정하고 흐름이 없는 관은 뺍니다. 수위 지표 도달 = 맨홀 수심이 최대 수심(뚜껑)까지 찬 경우.
+      </p>
+      <ul className="mt-1 min-h-0 flex-1 overflow-y-auto rounded border border-line">
+        {shown.length === 0 && <li className="px-3 py-3 text-center text-ink-muted">기준을 벗어난 항목이 없습니다.</li>}
+        {shown.map((h) => (
+          <li key={`${h.kind}:${h.id}`} className="flex cursor-pointer gap-2 border-b border-line/60 px-2 py-1 hover:bg-raised" onClick={() => focus(h)}>
+            <span className="w-28 shrink-0 text-ink-soft">{SWMM_REVIEW_LABELS[h.kind]}</span>
+            <span className="w-24 shrink-0 text-ink">{h.id}</span>
+            <span className="tabular-nums text-ink">{fmt(h)}</span>
+            <span className="ml-auto text-ink-muted">{clock(output, h.period)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function SwmmDock() {
   const run = useSwmmStore((s) => s.run);
   const status = useSwmmStore((s) => s.status);
@@ -434,6 +516,7 @@ export function SwmmDock() {
   const tabs: { id: SwmmBottomTab; label: string }[] = [
     { id: 'chart', label: '시계열' },
     { id: 'table', label: '결과 표' },
+    { id: 'review', label: '하수 검토' },
     { id: 'report', label: '해석 보고서' },
   ];
   return (
@@ -472,6 +555,8 @@ export function SwmmDock() {
             </div>
           ) : tab === 'chart' ? (
             <ChartTab output={output} />
+          ) : tab === 'review' ? (
+            <ReviewTab output={output} />
           ) : (
             <TableTab output={output} />
           )}
