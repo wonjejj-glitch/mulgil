@@ -10,6 +10,8 @@ import {
   type SimulationResults,
 } from '../core/engine/simulationManager';
 import { parseInp } from '../core/io/inpParser';
+import { networkDxf, networkShapefileZip, type ExportCrs } from '../core/io/gisExport';
+import { linkColumns, linkRows, nodeColumns, nodeRows, tableToCsv } from '../core/engine/resultsExport';
 import { writeInp } from '../core/io/inpWriter';
 import { loadShapefiles } from '../core/io/loadShapefiles';
 import { fetchOsmRoads } from './osmRoads';
@@ -65,6 +67,46 @@ export function focusObjects(highlight: Highlight): void {
   }
   const box = bboxOf(positions);
   if (box) ui.fitBounds(box);
+}
+
+/* ------------------------------------------------------------------ 성과품 내보내기 */
+
+function exportBase(): string {
+  const { fileName, model } = useNetworkStore.getState();
+  return baseName(fileName ?? model.title[0] ?? 'network') || 'network';
+}
+
+/** Shapefile(.zip: nodes·links). 해석 결과가 있으면 지금 시각의 수압·유량·유속을 속성으로 넣는다. */
+export function exportShapefile(crs: ExportCrs): void {
+  const { model } = useNetworkStore.getState();
+  const sim = useSimulationStore.getState();
+  if (Object.keys(model.nodes).length === 0) return;
+  const zip = networkShapefileZip(model, sim.results, sim.stepIndex, crs);
+  downloadText(`${exportBase()}_${crs === 'wgs84' ? 'WGS84' : '5186'}.zip`, zip, 'application/zip');
+  useUIStore.getState().pushToast({
+    level: 'success',
+    title: 'Shapefile 내보내기 완료',
+    message: `nodes·links 레이어 · 좌표계 ${crs === 'wgs84' ? 'WGS84 경위도' : 'EPSG:5186 중부원점'}${sim.results ? ` · 해석 결과 ${formatClock(sim.results.times[sim.stepIndex] ?? 0)} 값 포함` : ''}`,
+  });
+}
+
+export function exportDxf(): void {
+  const { model } = useNetworkStore.getState();
+  if (Object.keys(model.nodes).length === 0) return;
+  downloadText(`${exportBase()}_5186.dxf`, networkDxf(model), 'application/dxf');
+}
+
+/** 결과 표(지금 시각, 절점·링크) CSV 두 개. */
+export function exportResultTables(): void {
+  const { model } = useNetworkStore.getState();
+  const { results, stepIndex } = useSimulationStore.getState();
+  if (!results) {
+    useUIStore.getState().pushToast({ level: 'info', title: '먼저 해석을 실행하세요' });
+    return;
+  }
+  const t = formatClock(results.times[stepIndex] ?? 0).replace(':', '');
+  downloadText(`${exportBase()}_절점_${t}.csv`, tableToCsv(nodeRows(model, results), nodeColumns(model, results, stepIndex)), 'text/csv;charset=utf-8');
+  downloadText(`${exportBase()}_링크_${t}.csv`, tableToCsv(linkRows(model, results), linkColumns(model, results, stepIndex)), 'text/csv;charset=utf-8');
 }
 
 /* ------------------------------------------------------------------ SWMM (우수·하수) */

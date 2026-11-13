@@ -45,10 +45,28 @@ const fixed2 = (x: number) => x.toFixed(2);
  */
 export type DesignMode = 'compat' | 'practical';
 
-export function designSewer(input: SewerProject, diameterFloors: Record<string, number> = {}, mode: DesignMode = 'compat'): DesignResult {
+/** 실무 모드 세부 규칙 (설계기준 프리셋에서 채운다). 없으면 해당 규칙을 쓰지 않는다. */
+export interface PracticalRules {
+  /** 관 설계 유량 하한 (m³/s). 0 보다 크고 이 값보다 작으면 이 값으로 올린다 (예: 0.001). */
+  minFlow?: number;
+  /** 맨홀 안 단차가 이 값(m) 이상이면 '부관', 미만이면 '단차'로 표기. */
+  dropPipeAt?: number;
+  /** 맨홀 1곳 단차 상한 (m). 넘으면 위반. */
+  maxDrop?: number;
+}
+
+export function designSewer(
+  input: SewerProject,
+  diameterFloors: Record<string, number> = {},
+  mode: DesignMode = 'compat',
+  rules: PracticalRules = {},
+): DesignResult {
   const p: SewerProject = JSON.parse(JSON.stringify(input));
   const g = buildNetwork(p);
   const q = accumulatedFlows(p, g);
+  if (mode === 'practical' && rules.minFlow) {
+    for (const id in q) if (q[id] > 0 && q[id] < rules.minFlow) q[id] = rules.minFlow;
+  }
   const cst = p.constraints;
   const slopes: Record<string, number> = {};
   const issues: string[] = [];
@@ -147,6 +165,7 @@ export function designSewer(input: SewerProject, diameterFloors: Record<string, 
     if (ratio > cst.max_depth_ratio + 1e-7) problems.push('설계 d/D');
     if (vel > cst.max_velocity + 1e-7 || (q[c.id] > 0 && vel < cst.min_velocity - 1e-7)) problems.push('유속 범위');
     if (Math.max(u.ground - u.invert, v.ground - v.invert) > cst.max_depth + 1e-7) problems.push('굴착깊이');
+    if (rules.maxDrop !== undefined && drop > rules.maxDrop + 1e-7) problems.push(`단차 ${rules.maxDrop} m 초과`);
     if (problems.length > 0) issues.push(`${c.id}: ${problems.join(', ')} 제약 위반`);
     rows.push({
       id: c.id,
@@ -156,7 +175,9 @@ export function designSewer(input: SewerProject, diameterFloors: Record<string, 
       velocity: vel,
       depth_ratio: ratio,
       cover,
-      status: (problems.length > 0 ? problems.join(' / ') : '적합') + (drop > 0 ? ` · 부관 낙차 ${drop.toFixed(2)} m` : ''),
+      status:
+        (problems.length > 0 ? problems.join(' / ') : '적합') +
+        (drop > 0 ? ` · ${rules.dropPipeAt === undefined || drop >= rules.dropPipeAt ? '부관 낙차' : '단차'} ${drop.toFixed(2)} m` : ''),
       ...(drop > 0 ? { drop } : {}),
     });
   }

@@ -12,15 +12,16 @@ import {
   TriangleExclamationPoint,
   Wrench,
 } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fixSingleIssue, focusIssue, runNetworkValidation, selectIssueObjects } from '../../app/actions';
 import { formatClock } from '../../core/model/units';
-import { ISSUE_TYPE_LABELS, ISSUE_TYPE_ORDER, type ValidationIssue } from '../../core/validation';
+import { ISSUE_TYPE_LABELS, ISSUE_TYPE_ORDER, type ValidationIssue, type ValidationIssueType } from '../../core/validation';
 import { useNetworkStore } from '../../store/useNetworkStore';
 import { useSimulationStore } from '../../store/useSimulationStore';
 import { useUIStore, type BottomTab } from '../../store/useUIStore';
 import { useValidationStore } from '../../store/useValidationStore';
 import { Button } from '../ui/fields';
+import { CriteriaPanel } from './CriteriaPanel';
 import { ProfilePanel } from './ProfilePanel';
 import { ResultsTablePanel } from './ResultsTablePanel';
 import { TimeSeriesPanel } from './TimeSeriesPanel';
@@ -112,10 +113,12 @@ function IssueRow({ issue, active }: { issue: ValidationIssue; active: boolean }
     >
       {issue.severity === 'error' ? (
         <CircleExclamationPoint size={14} className="shrink-0 text-critical" />
+      ) : issue.severity === 'info' ? (
+        <Info size={14} className="shrink-0 text-ink-muted" />
       ) : (
         <TriangleExclamationPoint size={14} className="shrink-0 text-warn" />
       )}
-      <span className="w-20 shrink-0 text-ink-soft">{ISSUE_TYPE_LABELS[issue.type]}</span>
+      <span className="w-24 shrink-0 text-ink-soft">{ISSUE_TYPE_LABELS[issue.type]}</span>
       <span className="min-w-0 flex-1 truncate text-ink" title={issue.message}>
         {issue.message}
       </span>
@@ -157,11 +160,19 @@ function ValidationPanel() {
   const revision = useNetworkStore((s) => s.revision);
   const openModal = useUIStore((s) => s.openModal);
 
+  const [filter, setFilter] = useState<ValidationIssueType | 'all' | 'problems'>('problems');
+  const counts = useMemo(() => {
+    const c = new Map<ValidationIssueType, number>();
+    for (const i of issues) c.set(i.type, (c.get(i.type) ?? 0) + 1);
+    return c;
+  }, [issues]);
+  const infoCount = useMemo(() => issues.filter((i) => i.severity === 'info').length, [issues]);
   const sorted = useMemo(() => {
     const order = new Map(ISSUE_TYPE_ORDER.map((type, index) => [type, index]));
-    return [...issues].sort((a, b) => (order.get(a.type) ?? 0) - (order.get(b.type) ?? 0));
-  }, [issues]);
-  const fixableCount = useMemo(() => issues.filter((i) => i.fixable).length, [issues]);
+    const shown = filter === 'all' ? issues : filter === 'problems' ? issues.filter((i) => i.severity !== 'info') : issues.filter((i) => i.type === filter);
+    return [...shown].sort((a, b) => (order.get(a.type) ?? 0) - (order.get(b.type) ?? 0));
+  }, [issues, filter]);
+  const fixableCount = useMemo(() => issues.filter((i) => i.fixable && i.severity !== 'info').length, [issues]);
   const disconnected = useMemo(() => issues.filter((i) => i.type === 'disconnected'), [issues]);
   const stale = status === 'done' && checkedRevision !== revision;
 
@@ -187,7 +198,11 @@ function ValidationPanel() {
           </span>
         ) : (
           <span className="text-ink">
-            오류 {issues.length.toLocaleString()}건 <span className="text-ink-muted">· 자동 보정 가능 {fixableCount.toLocaleString()}건</span>
+            확인 필요 {(issues.length - infoCount).toLocaleString()}건
+            <span className="text-ink-muted">
+              {' '}
+              · 참고 {infoCount.toLocaleString()}건 · 자동 보정 가능 {fixableCount.toLocaleString()}건
+            </span>
           </span>
         )}
         {stale && <span className="rounded border border-warn/40 bg-warn/10 px-1.5 py-0.5 text-[10px] text-warn">편집 후 다시 검증 필요</span>}
@@ -209,6 +224,26 @@ function ValidationPanel() {
           </Button>
         </div>
       </div>
+      {issues.length > 0 && (
+        <div className="flex shrink-0 flex-wrap gap-1 border-b border-line px-3 py-1" role="tablist" aria-label="검증 유형">
+          {[
+            { id: 'problems' as const, label: '확인 필요', n: issues.length - infoCount },
+            { id: 'all' as const, label: '전체', n: issues.length },
+            ...ISSUE_TYPE_ORDER.filter((t) => counts.has(t)).map((t) => ({ id: t, label: ISSUE_TYPE_LABELS[t], n: counts.get(t)! })),
+          ].map((chip) => (
+            <button
+              key={chip.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === chip.id}
+              onClick={() => setFilter(chip.id)}
+              className={`rounded border px-1.5 py-0.5 text-[11px] ${filter === chip.id ? 'border-accent bg-accent/15 text-ink' : 'border-line text-ink-soft hover:text-ink'}`}
+            >
+              {chip.label} {chip.n.toLocaleString()}
+            </button>
+          ))}
+        </div>
+      )}
       <ul className="min-h-0 flex-1 overflow-y-auto">
         {sorted.slice(0, MAX_LISTED_ISSUES).map((issue) => (
           <IssueRow key={issue.id} issue={issue} active={issue.id === activeIssueId} />
@@ -259,6 +294,7 @@ export function BottomTimelineDock() {
     { id: 'timeline', label: '시계열' },
     { id: 'profile', label: '종단면도' },
     { id: 'table', label: '결과 표' },
+    { id: 'criteria', label: '설계기준 검토' },
     { id: 'validation', label: '관망 검증 결과', badge: issueCount },
     { id: 'log', label: '해석 로그', badge: logAlerts },
   ];
@@ -301,6 +337,7 @@ export function BottomTimelineDock() {
           {tab === 'timeline' && <TimeSeriesPanel />}
           {tab === 'profile' && <ProfilePanel />}
           {tab === 'table' && <ResultsTablePanel />}
+          {tab === 'criteria' && <CriteriaPanel />}
           {tab === 'validation' && <ValidationPanel />}
           {tab === 'log' && <LogPanel />}
         </div>

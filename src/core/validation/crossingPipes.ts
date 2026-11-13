@@ -22,12 +22,14 @@ interface PipeGeom {
 }
 
 /**
- * 관로 교차 미분할 검출.
- * - crossing: 두 관로가 절점 없이 X자로 교차. linkIds = [관로 A, 관로 B], position = 교차점.
+ * 관로 교차 미분할 검출. 교차는 관로 쌍마다 한 건으로 묶어
+ * - crossing: 절점 없이 한 곳에서 X자로 교차 (연결 누락 의심). linkIds = [관로 A, 관로 B], position = 교차점.
+ * - overpass: 한 곳에서 교차하나 관경 차이가 커서(본관-지관) 입체교차로 보이는 경우 (참고).
+ * - overlap: 두 관이 여러 곳에서 넘나듦 — 같은 도로에 나란히 묻힌 관 (참고, 보정 대상 아님).
  * - tee: 절점이 다른 관로의 중간에 놓여 있으나 연결되지 않음. nodeIds = [절점], linkIds = [관로].
  * 격자 공간 색인으로 후보 쌍을 줄여 대규모 관망에서도 동작한다 (Web Worker 에서 호출).
  */
-export function findCrossings(model: NetworkModel, toleranceMeters: number): ValidationIssue[] {
+export function findCrossings(model: NetworkModel, toleranceMeters: number, overpassRatio = 2.5): ValidationIssue[] {
   const nodeIds = Object.keys(model.nodes);
   if (nodeIds.length === 0) return [];
   let latSum = 0;
@@ -98,7 +100,7 @@ export function findCrossings(model: NetworkModel, toleranceMeters: number): Val
 
   // 1) X자 교차
   const testedPairs = new Set<number>();
-  const reported = new Set<string>();
+  const byPair = new Map<string, { first: PipeGeom; second: PipeGeom; points: [number, number][] }>();
   const segmentCount = segments.length;
   for (const bucket of grid.values()) {
     if (bucket.length < 2) continue;
@@ -132,21 +134,52 @@ export function findCrossings(model: NetworkModel, toleranceMeters: number): Val
         if (nearEndpoint(pipeA, px, py) || nearEndpoint(pipeB, px, py)) continue;
         const first = pipeA.id < pipeB.id ? pipeA : pipeB;
         const second = first === pipeA ? pipeB : pipeA;
-        const key = `${first.id}\u0000${second.id}\u0000${px.toFixed(2)}\u0000${py.toFixed(2)}`;
-        if (reported.has(key)) continue;
-        reported.add(key);
-        issues.push({
-          id: `crossing:${first.id}:${second.id}:${reported.size}`,
-          type: 'crossing',
-          severity: 'warning',
-          message: `관로 ${first.id} 과(와) 관로 ${second.id} 이(가) 절점 없이 교차합니다.`,
-          nodeIds: [],
-          linkIds: [first.id, second.id],
-          position: projector.inverse([px, py]),
-          fixable: true,
-        });
+        // 같은 관로 쌍은 한 건으로 묶는다 (꺾임점이 많은 관이 여러 번 넘나들어도 한 건)
+        const key = `${first.id}\u0000${second.id}`;
+        const hit = byPair.get(key);
+        const point: [number, number] = [px, py];
+        if (!hit) byPair.set(key, { first, second, points: [point] });
+        else if (!hit.points.some((q) => Math.hypot(q[0] - px, q[1] - py) < 0.01)) hit.points.push(point);
       }
     }
+  }
+  const diameterOf = (id: string) => {
+    const l = model.links[id];
+    return l && l.type === 'pipe' ? l.diameter : 0;
+  };
+  for (const { first, second, points } of byPair.values()) {
+    const position = projector.inverse(points[0]);
+    const pair = `관로 ${first.id} 과(와) 관로 ${second.id}`;
+    if (points.length >= 2) {
+      // 여러 곳에서 넘나듦 = 같은 도로를 따라 나란히 묻힌 관의 도면 형상이 서로 엇갈린 것. 연결 대상이 아니다.
+      issues.push({
+        id: `overlap:${first.id}:${second.id}`,
+        type: 'overlap',
+        severity: 'info',
+        message: `${pair} 이(가) ${points.length}곳에서 서로 넘나듭니다 — 나란히 매설된 관으로 보입니다(연결 대상 아님).`,
+        nodeIds: [],
+        linkIds: [first.id, second.id],
+        position,
+        fixable: false,
+      });
+      continue;
+    }
+    const da = diameterOf(first.id);
+    const db = diameterOf(second.id);
+    const ratio = Math.min(da, db) > 0 ? Math.max(da, db) / Math.min(da, db) : 1;
+    const overpass = ratio >= overpassRatio;
+    issues.push({
+      id: `${overpass ? 'overpass' : 'crossing'}:${first.id}:${second.id}`,
+      type: overpass ? 'overpass' : 'crossing',
+      severity: overpass ? 'info' : 'warning',
+      message: overpass
+        ? `${pair} 이(가) 교차합니다 (관경 ${da} / ${db}) — 본관·지관 입체교차로 보입니다. 실제로 연결된 곳만 분할하세요.`
+        : `${pair} 이(가) 절점 없이 교차합니다 (관경 ${da} / ${db}).`,
+      nodeIds: [],
+      linkIds: [first.id, second.id],
+      position,
+      fixable: true,
+    });
   }
 
   // 2) T자 미연결: 절점이 다른 관로의 중간 위에 놓여 있는 경우

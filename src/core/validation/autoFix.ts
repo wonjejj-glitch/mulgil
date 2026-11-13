@@ -157,7 +157,8 @@ export function applyAutoFix(
     }
   }
 
-  for (const issue of of('crossing')) {
+  // 입체교차 추정(overpass)은 사용자가 따로 고른 경우에만 같은 방식으로 분할한다
+  for (const issue of [...of('crossing'), ...of('overpass')]) {
     if (!issue.position) continue;
     const [aId, bId] = issue.linkIds;
     const nodeId = ensureNodeOnPipe(aId, issue.position);

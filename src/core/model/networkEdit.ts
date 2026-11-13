@@ -330,6 +330,9 @@ export function mergeNodes(model: NetworkModel, keepId: string, removeId: string
     if (link.startNodeId === link.endNodeId) delete model.links[linkId];
   }
   delete model.nodes[removeId];
+  // 제어 규칙·[DEMANDS]·수질 등 원문 섹션에서 지운 절점을 가리키던 참조도 남는 절점으로 옮긴다
+  renameInSections(model, 'node', removeId, keepId);
+  if (model.options?.quality.traceNode === removeId) model.options.quality.traceNode = keepId;
   recalcLengthsAt(model, keepId);
 }
 

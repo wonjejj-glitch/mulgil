@@ -211,6 +211,12 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
 - **사용 설명서**: `public/manual.html`(정적, 툴바 📖 버튼이 BASE_URL 기준으로 새 탭). 기능을 바꾸면 설명서도 고칠 것. 끝에 기존 데스크톱 프로그램 대응표가 있다.
 - **기존 데스크톱 관망 프로그램**(상수·하수 각 1종, 매뉴얼은 저장소 밖)에서 가져온 것: 분담유량·산출표, 검토 목록, 절점/링크 병합, ID 재부여, 자동 백업. 남은 후보: 종단 편집 단축키·접합 명령,
   강우강도식(일반식/다항식)·누가면적별 첨두계수, 유역→관 면적 자동 배분, 맨홀 라이브러리, 처리 구역, 지하매설물·보링 종단 표시.
+- **검증 교차 분류**(`crossingPipes.ts`): 관로 쌍마다 한 건. 2곳 이상 넘나들면 `overlap`(참고, 보정 불가), 관경비 ≥ 2.5 면 `overpass`(참고, 일괄 보정 기본 제외),
+  나머지 `crossing`. severity 'info' = 참고. 하단 검증 탭은 유형 필터(기본 '확인 필요'). `mergeNodes` 는 원문 섹션의 절점 참조도 옮긴다.
+- **설계기준 검토**(`core/engine/criteria.ts` + `CriteriaPanel`): 수압 15.3/71.4 m, 유속 0.3~3.0 m/s 기본(US 는 환산), 수원별 물수지(급수구역은 최대 수요 시각 기준).
+- **내보내기**(`core/io/gisExport.ts`): STORE zip(CRC32), Shapefile(점·폴리라인, dbf UTF-8 + .cpg, prj 는 WGS84·5186 WKT), DXF R12. 우리 Shapefile 리더로 왕복 테스트.
+- **하수 설계기준 프리셋**(`core/sewer/standards.ts`): 부산 2026 오수관로. `designSewer(…, mode, rules)` 의 PracticalRules(minFlow·dropPipeAt·maxDrop)는 practical 모드에서만.
+  원문 추출본은 세션 스크래치(저장소 밖). 우수·합류식 값은 그 문서에 없다.
 - **배포·SWMM 5.2.4**: 저장소 https://github.com/wonjejj-glitch/mulgil (공개), 사이트 https://wonjejj-glitch.github.io/mulgil/ .
   main 에 push 하면 `.github/workflows/deploy.yml` 이 ① emscripten/emsdk 컨테이너에서 USEPA 공식 v5.2.4 소스를 `swmm5.mjs`(SINGLE_FILE ES 모듈)로 컴파일
   ② `src/core/swmm/engine/` 에 넣고 lint·test(엔진 테스트가 5.2.4 로 돔)·build(BASE_PATH=/mulgil/) ③ Pages 배포. 배포본 보고서 머리글 "VERSION 5.2 (Build 5.2.4)" 확인.

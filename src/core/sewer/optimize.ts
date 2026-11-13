@@ -2,7 +2,7 @@
  * 설계 → SWMM 해석 → 관경 확대 반복 (SewerStudio workflow.py 호환, SPEC §5).
  * 해석은 simulate 콜백으로 주입한다 (브라우저는 Worker, 테스트는 고정 결과).
  */
-import { designSewer, type DesignMode, type DesignResult } from './design';
+import { designSewer, type DesignMode, type DesignResult, type PracticalRules } from './design';
 import type { SimulationSummary } from './report';
 import type { SewerProject } from './types';
 
@@ -35,6 +35,7 @@ export async function optimizeSewer(
   simulate: SimulateFn,
   onProgress?: (message: string) => void,
   mode: DesignMode = 'compat',
+  rules: PracticalRules = {},
 ): Promise<OptimizeOutcome> {
   const cst = project.constraints;
   let floors: Record<string, number> = {};
@@ -45,7 +46,7 @@ export async function optimizeSewer(
   for (let iteration = 1; iteration <= cst.max_iterations; iteration++) {
     const floorsUsed = { ...floors };
     // 항상 최초 입력 project 에서 다시 설계하고 floors 만 누적한다 (이전 회차 표고를 이어받지 않음)
-    const design = designSewer(project, floors, mode);
+    const design = designSewer(project, floors, mode, rules);
     onProgress?.(`${iteration}회차 SWMM 해석 중…`);
     const sim = await simulate(design, iteration);
     iterations.push({ design, simulation: sim });

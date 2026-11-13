@@ -47,6 +47,37 @@ export async function sampleTerrainTiles(points: LngLat[], onProgress?: (done: n
 }
 
 /**
+ * 표고점 텍스트(XYZ/CSV/TXT: 줄마다 X Y Z, 쉼표·공백·탭 구분, 머리글 줄은 건너뜀)로 IDW 보간기를 만든다.
+ * 측량 성과, CAD 점고도, DEM 을 점으로 내보낸 자료 등. 좌표계는 자동 감지하고 모르면 fallbackCrs 를 쓴다.
+ */
+export async function interpolatorFromXyz(files: File[], fallbackCrs: string | null): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
+  const raw: { xy: [number, number]; z: number }[] = [];
+  for (const f of files) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    let text: string;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      text = new TextDecoder('euc-kr').decode(bytes);
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const parts = line.trim().split(/[\s,;]+/).map(Number);
+      if (parts.length < 3 || parts.slice(0, 3).some((v) => !Number.isFinite(v))) continue;
+      // 점번호가 앞에 붙은 형식(번호 X Y Z)이면 마지막 세 값을 쓴다
+      const [x, y, z] = parts.length >= 4 ? parts.slice(-3) : parts;
+      raw.push({ xy: [x, y], z });
+    }
+  }
+  if (raw.length === 0) throw new Error('표고점을 읽지 못했습니다. 줄마다 X Y Z (또는 번호 X Y Z) 형식인지 확인하세요.');
+  const detected = detectCrs(raw.map((r) => r.xy));
+  const code = detected === 'local' ? fallbackCrs : detected;
+  if (!code || code === 'local') throw new Error('표고점 좌표계를 알 수 없습니다. 왼쪽 패널 ‘가져오기 좌표계’를 맞추거나 EPSG 좌표로 된 자료를 넣으세요.');
+  const crs = code === 'wgs84' ? ({ kind: 'wgs84' } as const) : ({ kind: 'epsg', code } as const);
+  const points: ElevationPoint[] = raw.map((r) => ({ position: toWgs84(crs, r.xy), z: r.z }));
+  return { idw: new IdwInterpolator(points, 300, 8), points: points.length, layers: files.map((f) => f.name) };
+}
+
+/**
  * 수치지형도 Shapefile(표고점·등고선, .shp/.dbf/.prj 또는 .zip)로 IDW 보간기를 만든다.
  * 표고는 속성(CONT·NUME·ELEV 등) 또는 도형의 Z 값에서 읽는다.
  */

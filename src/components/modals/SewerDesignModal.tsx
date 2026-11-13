@@ -1,4 +1,4 @@
-import { ArrowDownToLine, CircleCheck, Download, FilePlus2, FolderOpen, Map as MapIcon, Play, Plus, RefreshCw, Repeat, Save, SkipForward, Trash, TriangleExclamationPoint, Undo2, Wand2 } from 'lucide-react';
+import { ArrowDownToLine, BookCheck, CircleCheck, Download, FilePlus2, FolderOpen, Map as MapIcon, Play, Plus, RefreshCw, Repeat, Save, SkipForward, Trash, TriangleExclamationPoint, Undo2, Wand2 } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis, Area } from 'recharts';
 import {
@@ -14,6 +14,7 @@ import {
   showSewerOnMap,
 } from '../../app/sewerActions';
 import type { DesignMode } from '../../core/sewer/design';
+import { BUSAN_2026_SEWAGE } from '../../core/sewer/standards';
 import { DEFAULT_REVIEW, REVIEW_KINDS, reviewCsv, reviewSewer, type ReviewCriteria, type ReviewKind, type Verdict } from '../../core/sewer/review';
 import { buildNetwork } from '../../core/sewer/topology';
 import { baseName, downloadText } from '../../utils/files';
@@ -264,6 +265,7 @@ function ConditionsTab() {
   const project = useSewerStore((s) => s.project);
   const edit = useSewerStore((s) => s.edit);
   const designMode = useSewerStore((s) => s.designMode);
+  const standard = useSewerStore((s) => s.standard);
   const c = project.constraints;
   const o = project.options;
   const [diameterText, setDiameterText] = useState<string | null>(null);
@@ -281,7 +283,44 @@ function ConditionsTab() {
     <div className="grid grid-cols-2 gap-6">
       <section>
         <h3 className="mb-1.5 text-xs font-semibold text-ink">설계 제약</h3>
-        <Note tone="warn">기본값은 SewerStudio 의 예제값이며 한국 하수도시설기준으로 검증된 값이 아닙니다. 사용하는 기준에 맞게 직접 입력하세요.</Note>
+        <div className="rounded border border-line bg-raised/40 p-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={standard ? 'default' : 'primary'}
+              onClick={() => {
+                const s = BUSAN_2026_SEWAGE;
+                edit((d) => void Object.assign(d.constraints, s.constraints));
+                useSewerStore.getState().setDesignMode('practical');
+                useSewerStore.getState().setDesignRules(s.rules, s.name);
+              }}
+            >
+              <BookCheck size={13} />
+              부산 2026 오수관로 기준 적용
+            </Button>
+            <span className="text-[11px] text-ink-muted">관 조도 일괄:</span>
+            {[
+              { n: 0.013, label: '0.013 콘크리트·도관' },
+              { n: 0.011, label: '0.011 PVC·GRP·PE' },
+            ].map((o) => (
+              <Button key={o.n} onClick={() => edit((d) => d.conduits.forEach((c) => (c.roughness = o.n)))}>
+                {o.label}
+              </Button>
+            ))}
+          </div>
+          {standard ? (
+            <details className="mt-1.5 text-[11px] text-ink-soft">
+              <summary className="cursor-pointer text-ink">적용됨: {standard}</summary>
+              <ul className="mt-1 list-disc pl-4">
+                {BUSAN_2026_SEWAGE.notes.map((n) => (
+                  <li key={n}>{n}</li>
+                ))}
+              </ul>
+              <p className="mt-1 text-ink-muted">문서에 규정이 없어 그대로 둔 값: {BUSAN_2026_SEWAGE.notDefined.join(' · ')}</p>
+            </details>
+          ) : (
+            <Note tone="warn">지금 값은 SewerStudio 예제값입니다. 위 단추로 부산시 2026 오수관로 설계기준 값을 넣을 수 있습니다(우수·합류식 값은 그 문서에 없음).</Note>
+          )}
+        </div>
         <div className="mt-2">
           {field('최소 토피', 'm', c.min_cover, (v) => edit((d) => void (d.constraints.min_cover = v)), 0)}
           {field('최대 굴착깊이', 'm', c.max_depth, (v) => edit((d) => void (d.constraints.max_depth = v)), 0)}

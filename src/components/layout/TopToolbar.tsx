@@ -36,8 +36,11 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   deleteSelection,
+  exportDxf,
   exportGeoJsonFile,
   exportInp,
+  exportResultTables,
+  exportShapefile,
   fitToNetwork,
   importFiles,
   loadSample,
@@ -213,6 +216,38 @@ export function TopToolbar() {
               onClick={() => {
                 close();
                 exportGeoJsonFile();
+              }}
+            />
+            <MenuItem
+              icon={Download}
+              label="Shapefile 내보내기 (EPSG:5186, .zip)"
+              onClick={() => {
+                close();
+                exportShapefile('EPSG:5186');
+              }}
+            />
+            <MenuItem
+              icon={Download}
+              label="Shapefile 내보내기 (경위도, .zip)"
+              onClick={() => {
+                close();
+                exportShapefile('wgs84');
+              }}
+            />
+            <MenuItem
+              icon={Download}
+              label="DXF 내보내기 (CAD, EPSG:5186)"
+              onClick={() => {
+                close();
+                exportDxf();
+              }}
+            />
+            <MenuItem
+              icon={Download}
+              label="수리계산 결과표 CSV (지금 시각)"
+              onClick={() => {
+                close();
+                exportResultTables();
               }}
             />
             <div className="my-1 border-t border-line" />

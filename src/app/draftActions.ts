@@ -141,7 +141,7 @@ export function sendSewerDraft(): void {
   if (!s.result) return;
   const draft = draftToSewerProject(s.result, s.sewer, `${baseName(s.fileName || '수용가')} 하수 초안`.slice(0, 60));
   // 방류구 깊이를 설계에 맞춘다 (얕게 고정하면 마지막 관이 역경사·만관이 된다)
-  const { project } = fitOutfallInverts(draft, useSewerStore.getState().designMode);
+  const { project } = fitOutfallInverts(draft, useSewerStore.getState().designMode, useSewerStore.getState().designRules);
   useSewerStore.getState().setProject(project);
   s.set({ overlay: false });
   useUIStore.getState().openModal('sewer');

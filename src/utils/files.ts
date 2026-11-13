@@ -7,8 +7,8 @@ export function decodeText(buffer: ArrayBuffer): string {
   }
 }
 
-export function downloadText(fileName: string, text: string, mime = 'text/plain;charset=utf-8'): void {
-  const url = URL.createObjectURL(new Blob([text], { type: mime }));
+export function downloadText(fileName: string, text: string | Uint8Array, mime = 'text/plain;charset=utf-8'): void {
+  const url = URL.createObjectURL(new Blob([text as BlobPart], { type: mime }));
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = fileName;

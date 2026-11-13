@@ -38,7 +38,7 @@ export function runSewerDesign(): DesignResult | null {
   const project = validatedProject();
   if (!project) return null;
   try {
-    const design = designSewer(project, {}, store.designMode);
+    const design = designSewer(project, {}, store.designMode, store.designRules);
     store.setDesign(design);
     store.setSimulation(null, null);
     store.setOutcome(null);
@@ -97,6 +97,7 @@ export async function runSewerOptimize(): Promise<void> {
       },
       (m) => useSewerStore.getState().setBusy(m),
       store.designMode,
+      store.designRules,
     );
     store.setOutcome(outcome);
     store.setDesign(outcome.design);
@@ -120,7 +121,7 @@ export function fitOutfallDepth(): void {
   const project = validatedProject();
   if (!project) return;
   try {
-    const { project: fitted, changes } = fitOutfallInverts(project, store.designMode);
+    const { project: fitted, changes } = fitOutfallInverts(project, store.designMode, store.designRules);
     if (changes.length === 0) {
       useUIStore.getState().pushToast({ level: 'info', title: '맞출 방류구가 없습니다', message: '유입 관이 하나인 방류구만 맞춥니다.' });
       return;

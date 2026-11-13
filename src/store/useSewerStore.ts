@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { SwmmRun } from '../core/swmm/swmmManager';
-import type { DesignMode, DesignResult } from '../core/sewer/design';
+import type { DesignMode, DesignResult, PracticalRules } from '../core/sewer/design';
 import type { OptimizeOutcome } from '../core/sewer/optimize';
 import type { SimulationSummary } from '../core/sewer/report';
 import { demoProject, type SewerProject } from '../core/sewer/types';
@@ -23,6 +23,11 @@ interface SewerState {
   error: string | null;
   /** 소유량 관로 처리 방식 (core/sewer/design.ts DesignMode) */
   designMode: DesignMode;
+  /** 실무 모드 세부 규칙 (설계기준 프리셋) */
+  designRules: PracticalRules;
+  /** 적용한 설계기준 이름 (없으면 null) */
+  standard: string | null;
+  setDesignRules: (rules: PracticalRules, standard: string | null) => void;
 
   setDesignMode: (mode: DesignMode) => void;
   setProject: (project: SewerProject, options?: { keepResults?: boolean }) => void;
@@ -50,6 +55,9 @@ export const useSewerStore = create<SewerState>()((set, get) => ({
   busy: null,
   error: null,
   designMode: 'practical',
+  designRules: {},
+  standard: null,
+  setDesignRules: (designRules, standard) => set({ designRules, standard, design: null, simulation: null, run: null, outcome: null }),
 
   setDesignMode: (designMode) => set({ designMode, design: null, simulation: null, run: null, outcome: null }),
   // 새 프로젝트를 통째로 넣는다 (열기·설계 결과 반영). 입력이 바뀌면 이전 결과는 무효.

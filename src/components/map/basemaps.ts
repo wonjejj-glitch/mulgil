@@ -18,7 +18,11 @@ function vworldTiles(key: string, layer: 'Base' | 'Satellite' | 'Hybrid'): strin
 }
 
 /** 배경지도 선택에 맞는 MapLibre 스타일을 만든다. */
-export function buildMapStyle(basemap: BasemapId, vworldKey: string): StyleSpecification {
+/**
+ * @param dim 배경 밝기 배율 (0.1~1.5, 1 = 기본). 관망이 잘 보이도록 배경을 흐리게/진하게 한다.
+ * @param gray 흑백 (채도 제거) — 색 있는 관망·결과 색과 겹치지 않게.
+ */
+export function buildMapStyle(basemap: BasemapId, vworldKey: string, dim = 1, gray = false): StyleSpecification {
   const style: StyleSpecification = {
     version: 8,
     sources: {},
@@ -26,7 +30,7 @@ export function buildMapStyle(basemap: BasemapId, vworldKey: string): StyleSpeci
   };
   const addRaster = (id: string, tiles: string[], attribution: string, maxzoom: number, opacity = 1, minzoom = 0) => {
     style.sources[id] = { type: 'raster', tiles, tileSize: 256, attribution, minzoom, maxzoom };
-    style.layers.push({ id, type: 'raster', source: id, paint: { 'raster-opacity': opacity } });
+    style.layers.push({ id, type: 'raster', source: id, paint: { 'raster-opacity': Math.min(1, opacity * dim), 'raster-saturation': gray ? -1 : 0 } });
   };
 
   const vworldAttribution = '© <a href="https://www.vworld.kr" target="_blank" rel="noreferrer">VWorld 국토교통부</a>';

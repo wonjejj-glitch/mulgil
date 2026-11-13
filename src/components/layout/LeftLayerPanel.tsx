@@ -54,6 +54,9 @@ export function LeftLayerPanel() {
   const flowUnits = useNetworkStore((s) => s.model.options.flowUnits);
   const hasResults = useSimulationStore((s) => s.results !== null);
   const basemap = useUIStore((s) => s.basemap);
+  const basemapDim = useUIStore((s) => s.basemapDim);
+  const basemapGray = useUIStore((s) => s.basemapGray);
+  const setBasemapLook = useUIStore((s) => s.setBasemapLook);
   const setBasemap = useUIStore((s) => s.setBasemap);
   const vworldKey = useUIStore((s) => s.vworldKey);
   const setVworldKey = useUIStore((s) => s.setVworldKey);
@@ -147,6 +150,28 @@ export function LeftLayerPanel() {
             </label>
           ))}
         </div>
+        {basemap !== 'none' && (
+          <div className="mt-2 space-y-1 px-1.5 text-xs text-ink-soft">
+            <label className="flex items-center gap-2">
+              <span className="w-12 shrink-0">진하기</span>
+              <input
+                type="range"
+                aria-label="배경지도 진하기"
+                min={0.1}
+                max={1.6}
+                step={0.05}
+                value={basemapDim}
+                onChange={(e) => setBasemapLook({ dim: Number(e.target.value) })}
+                className="min-w-0 flex-1 accent-accent"
+              />
+              <span className="w-9 text-right tabular-nums text-ink-muted">{Math.round(basemapDim * 100)}%</span>
+            </label>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input type="checkbox" className="accent-accent" checked={basemapGray} onChange={(e) => setBasemapLook({ gray: e.target.checked })} />
+              흑백 (관망 색이 잘 보이게)
+            </label>
+          </div>
+        )}
         {needsKey && (
           <div className="mt-2">
             <FieldRow label="인증키">

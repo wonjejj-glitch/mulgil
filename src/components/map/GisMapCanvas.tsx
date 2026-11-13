@@ -141,7 +141,9 @@ export function GisMapCanvas() {
   const swmmThematic = useSwmmThematic();
   const swmmActive = swmmProject !== null;
 
-  const mapStyle = useMemo(() => buildMapStyle(basemap, vworldKey), [basemap, vworldKey]);
+  const basemapDim = useUIStore((s) => s.basemapDim);
+  const basemapGray = useUIStore((s) => s.basemapGray);
+  const mapStyle = useMemo(() => buildMapStyle(basemap, vworldKey, basemapDim, basemapGray), [basemap, vworldKey, basemapDim, basemapGray]);
   const usUnits = isUsUnits(flowUnits);
 
   const { junctions, sources } = useMemo(() => {

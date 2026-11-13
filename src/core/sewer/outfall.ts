@@ -6,7 +6,7 @@
  *   2) 마지막 관이 필요한 경사(최소 경사·d/D·유속)를 갖도록 방류구 관저고 = 위 관정 − 경사×연장 − 관경 으로 정한다.
  * 결과 깊이가 최대 굴착깊이를 넘으면 설계 검토에 그대로 나온다(중계펌프장 검토 대상).
  */
-import { designSewer, type DesignMode } from './design';
+import { designSewer, type DesignMode, type PracticalRules } from './design';
 import { requiredSlope } from './hydraulics';
 import type { SewerProject } from './types';
 
@@ -18,7 +18,7 @@ export interface OutfallChange {
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
-export function fitOutfallInverts(input: SewerProject, mode: DesignMode = 'practical'): { project: SewerProject; changes: OutfallChange[] } {
+export function fitOutfallInverts(input: SewerProject, mode: DesignMode = 'practical', rules: PracticalRules = {}): { project: SewerProject; changes: OutfallChange[] } {
   const p: SewerProject = JSON.parse(JSON.stringify(input));
   const k = p.constraints;
   const targets = p.nodes.filter((n) => n.kind === 'OUTFALL' && p.conduits.filter((c) => c.downstream === n.id).length === 1);
@@ -26,7 +26,7 @@ export function fitOutfallInverts(input: SewerProject, mode: DesignMode = 'pract
   const original = new Map(targets.map((n) => [n.id, n.invert]));
   // 1) 방류구가 상류 설계를 제약하지 않도록 아주 깊게 (지반고보다는 낮게 유지)
   for (const n of targets) n.invert = Math.min(n.invert, n.ground - Math.max(k.max_depth, 1) * 3);
-  const first = designSewer(p, {}, mode);
+  const first = designSewer(p, {}, mode, rules);
   const nodeOf = new Map(first.project.nodes.map((n) => [n.id, n]));
   const changes: OutfallChange[] = [];
   for (const n of targets) {

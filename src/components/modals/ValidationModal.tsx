@@ -29,6 +29,12 @@ const FIX_INFO: Record<ValidationIssueType, FixInfo> = {
     text: '교차점에 절점을 만들고 두 관로를 분할합니다. 입체 교차(실제로는 연결되지 않은 관로)일 수 있으니 확인 후 적용하세요.',
   },
   tee: { auto: true, severity: 'warning', text: '절점 위치에서 관로를 분할해 연결합니다.' },
+  overpass: {
+    auto: true,
+    severity: 'warning',
+    text: '관경 차이가 큰 본관·지관 교차라 입체교차일 가능성이 큽니다. 분할하면 실제로는 없는 연결이 생겨 수리 계통이 바뀌니, 연결이 확인된 곳만 목록에서 하나씩 보정하세요.',
+  },
+  overlap: { auto: false, severity: 'warning', text: '참고 — 같은 도로를 따라 나란히 묻힌 두 관의 도면 형상이 엇갈린 것입니다. 연결하지 않습니다.' },
 };
 
 /** 교차 미분할은 정상적인 입체 교차일 수 있어 기본으로는 보정 대상에서 뺀다. */
@@ -41,10 +47,12 @@ const DEFAULT_CHECKED: Record<ValidationIssueType, boolean> = {
   microPipe: true,
   crossing: false,
   tee: true,
+  overpass: false,
+  overlap: false,
 };
 
 function emptyCounts(): Record<ValidationIssueType, number> {
-  return { noSource: 0, disconnected: 0, orphanNode: 0, selfLoop: 0, duplicatePipe: 0, microPipe: 0, crossing: 0, tee: 0 };
+  return { noSource: 0, disconnected: 0, orphanNode: 0, selfLoop: 0, duplicatePipe: 0, microPipe: 0, crossing: 0, tee: 0, overpass: 0, overlap: 0 };
 }
 
 function ValidationDialog() {

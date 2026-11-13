@@ -13,7 +13,7 @@ export interface MultiSelection {
 export type BasemapId = 'osm' | 'satellite' | 'vworld-base' | 'vworld-satellite' | 'vworld-hybrid' | 'none';
 export type NodeTheme = 'none' | 'pressure' | 'head' | 'demand' | 'quality' | 'zone' | 'elevation';
 export type LinkTheme = 'none' | 'velocity' | 'flow' | 'unitHeadloss' | 'quality' | 'zone' | 'diameter';
-export type BottomTab = 'timeline' | 'profile' | 'table' | 'validation' | 'log';
+export type BottomTab = 'timeline' | 'profile' | 'table' | 'criteria' | 'validation' | 'log';
 export type ModalId = 'validation' | 'simulation' | 'curves' | 'controls' | 'fireflow' | 'correction' | 'sewer' | 'draft' | 'allocate' | 'tools' | null;
 
 /** 지도에서 한 점 고르기 (대화상자를 잠시 닫고 클릭을 기다린다). */
@@ -68,10 +68,12 @@ const LEGACY_STORAGE_KEY = 'opengispipe.ui';
 interface PersistedUI {
   basemap: BasemapId;
   vworldKey: string;
+  basemapDim: number;
+  basemapGray: boolean;
 }
 
 function loadPersisted(): PersistedUI {
-  const fallback: PersistedUI = { basemap: 'osm', vworldKey: '' };
+  const fallback: PersistedUI = { basemap: 'osm', vworldKey: '', basemapDim: 1, basemapGray: false };
   try {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return fallback;
@@ -79,6 +81,8 @@ function loadPersisted(): PersistedUI {
     return {
       basemap: parsed.basemap ?? fallback.basemap,
       vworldKey: typeof parsed.vworldKey === 'string' ? parsed.vworldKey : '',
+      basemapDim: typeof parsed.basemapDim === 'number' ? parsed.basemapDim : 1,
+      basemapGray: parsed.basemapGray === true,
     };
   } catch {
     return fallback;
@@ -99,6 +103,8 @@ interface UIState {
   highlight: Highlight | null;
   basemap: BasemapId;
   vworldKey: string;
+  basemapDim: number;
+  basemapGray: boolean;
   layers: LayerVisibility;
   nodeTheme: NodeTheme;
   linkTheme: LinkTheme;
@@ -128,6 +134,7 @@ interface UIState {
   setHighlight: (highlight: Highlight | null) => void;
   setBasemap: (basemap: BasemapId) => void;
   setVworldKey: (key: string) => void;
+  setBasemapLook: (look: { dim?: number; gray?: boolean }) => void;
   toggleLayer: (layer: keyof LayerVisibility) => void;
   setNodeTheme: (theme: NodeTheme) => void;
   setLinkTheme: (theme: LinkTheme) => void;
@@ -154,6 +161,8 @@ export const useUIStore = create<UIState>()((set, get) => ({
   highlight: null,
   basemap: persisted.basemap,
   vworldKey: persisted.vworldKey,
+  basemapDim: persisted.basemapDim,
+  basemapGray: persisted.basemapGray,
   layers: {
     junctions: true,
     sources: true,
@@ -194,11 +203,16 @@ export const useUIStore = create<UIState>()((set, get) => ({
   setHighlight: (highlight) => set({ highlight }),
   setBasemap: (basemap) => {
     set({ basemap });
-    persist({ basemap, vworldKey: get().vworldKey });
+    persist({ basemap, vworldKey: get().vworldKey, basemapDim: get().basemapDim, basemapGray: get().basemapGray });
   },
   setVworldKey: (vworldKey) => {
     set({ vworldKey });
-    persist({ basemap: get().basemap, vworldKey });
+    persist({ basemap: get().basemap, vworldKey, basemapDim: get().basemapDim, basemapGray: get().basemapGray });
+  },
+  setBasemapLook: (look) => {
+    set({ basemapDim: look.dim ?? get().basemapDim, basemapGray: look.gray ?? get().basemapGray });
+    const s = get();
+    persist({ basemap: s.basemap, vworldKey: s.vworldKey, basemapDim: s.basemapDim, basemapGray: s.basemapGray });
   },
   toggleLayer: (layer) => set((s) => ({ layers: { ...s.layers, [layer]: !s.layers[layer] } })),
   setNodeTheme: (nodeTheme) => set({ nodeTheme }),

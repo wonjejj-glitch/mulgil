@@ -20,7 +20,7 @@ export function runValidation(
     ...findSelfLoops(model),
     ...findDuplicatePipes(model),
     ...findMicroPipes(model, options.microPipeLength),
-    ...findCrossings(model, options.teeTolerance),
+    ...findCrossings(model, options.teeTolerance, options.overpassDiameterRatio ?? 2.5),
   ];
 }
 
@@ -34,6 +34,8 @@ export function countByType(issues: ValidationIssue[]): Record<ValidationIssueTy
     disconnected: 0,
     crossing: 0,
     tee: 0,
+    overpass: 0,
+    overlap: 0,
   };
   for (const issue of issues) counts[issue.type]++;
   return counts;
