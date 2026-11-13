@@ -267,101 +267,39 @@ export function TopToolbar() {
         )}
       </Menu>
       <Menu label="데이터" icon={ChartSpline}>
-        {(close) => (
-          <>
+        {(close) => {
+          const item = (icon: LucideIcon, label: string, run: () => void) => (
             <MenuItem
-              icon={Settings2}
-              label="해석 옵션 · 수요 패턴 · 수질"
+              icon={icon}
+              label={label}
               onClick={() => {
                 close();
-                openModal('simulation');
+                run();
               }}
             />
-            <MenuItem
-              icon={ChartSpline}
-              label="펌프·배수지 곡선"
-              onClick={() => {
-                close();
-                openModal('curves');
-              }}
-            />
-            <MenuItem
-              icon={Workflow}
-              label="제어 규칙 (CONTROLS / RULES)"
-              onClick={() => {
-                close();
-                openModal('controls');
-              }}
-            />
-            <div className="my-1 border-t border-line" />
-            <MenuItem
-              icon={Users}
-              label="수용가 자료로 관망 초안 만들기"
-              onClick={() => {
-                close();
-                openModal('draft');
-              }}
-            />
-            <MenuItem
-              icon={LayoutGrid}
-              label="용도지역 분담유량 (수요량 배분)"
-              onClick={() => {
-                close();
-                openModal('allocate');
-              }}
-            />
-            <MenuItem
-              icon={Wrench}
-              label="관망 정리 (절점·관 병합, ID 재부여)"
-              onClick={() => {
-                close();
-                openModal('tools');
-              }}
-            />
-            <div className="my-1 border-t border-line" />
-            <div className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">우수 · 하수 (SWMM)</div>
-            <MenuItem
-              icon={FolderOpen}
-              label="SWMM .inp 열기 → 해석 · 결과 보기"
-              onClick={() => {
-                close();
-                fileInput.current?.click();
-              }}
-            />
-            <MenuItem
-              icon={CloudRain}
-              label="우수관망 예제로 해보기"
-              onClick={() => {
-                close();
-                void loadSample('sample-sewer.inp');
-              }}
-            />
-            <MenuItem
-              icon={Waves}
-              label="하수관 자동 설계 (우·오수)"
-              onClick={() => {
-                close();
-                openModal('sewer');
-              }}
-            />
-            <MenuItem
-              icon={Route}
-              label="도로 따라 관로 맞추기 · 표고 보정"
-              onClick={() => {
-                close();
-                openModal('correction');
-              }}
-            />
-            <MenuItem
-              icon={Flame}
-              label="소화용수 분석"
-              onClick={() => {
-                close();
-                openModal('fireflow');
-              }}
-            />
-          </>
-        )}
+          );
+          const head = (text: string) => <div className="px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">{text}</div>;
+          return (
+            <>
+              {head('공통 · 관망 만들기')}
+              {item(Users, '수용가 자료로 관망 초안 만들기 (상수·하수)', () => openModal('draft'))}
+              <div className="my-1 border-t border-line" />
+              {head('상수 (EPANET)')}
+              {item(Settings2, '해석 옵션 · 수요 패턴 · 수질', () => openModal('simulation'))}
+              {item(ChartSpline, '펌프·배수지 곡선', () => openModal('curves'))}
+              {item(Workflow, '제어 규칙 (CONTROLS / RULES)', () => openModal('controls'))}
+              {item(LayoutGrid, '용도지역 분담유량 (수요량 배분)', () => openModal('allocate'))}
+              {item(Wrench, '관망 정리 (절점·관 병합, ID 재부여)', () => openModal('tools'))}
+              {item(Route, '도로 따라 관로 맞추기 · 표고 보정', () => openModal('correction'))}
+              {item(Flame, '소화용수 분석', () => openModal('fireflow'))}
+              <div className="my-1 border-t border-line" />
+              {head('우수 · 하수 (SWMM)')}
+              {item(FolderOpen, 'SWMM .inp 열기 → 해석 · 하수 검토', () => fileInput.current?.click())}
+              {item(CloudRain, '우수관망 예제로 해보기', () => void loadSample('sample-sewer.inp'))}
+              {item(Waves, '하수관 자동 설계 (우·오수)', () => openModal('sewer'))}
+            </>
+          );
+        }}
       </Menu>
       <input
         ref={fileInput}
