@@ -40,7 +40,8 @@ export function parseSurveyCsv(text: string): { rows: SurveyRow[]; columns: stri
   const split = (l: string) => l.split(sep).map((c) => c.trim().replace(/^"|"$/g, ''));
   const head = split(lines[0]);
   const find = (re: RegExp, skip: number[] = []) => head.findIndex((h, i) => !skip.includes(i) && re.test(h));
-  const id = find(ID);
+  // '맨홀 지반고' 같은 값 열이 번호 열로 잡히지 않게 값 열 이름은 뺀다
+  const id = head.findIndex((h) => ID.test(h) && !GROUND.test(h) && !INVERT.test(h) && !DEPTH.test(h));
   // '관저고' 와 '지반고' 가 같은 열로 잡히지 않게 관저를 먼저 찾는다
   const invert = find(INVERT, [id]);
   const ground = find(GROUND, [id, invert]);

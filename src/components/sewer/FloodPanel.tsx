@@ -30,6 +30,8 @@ export function FloodPanel() {
   const busy = useFloodStore((s) => s.busy);
   const hasRun = useSewerStore((s) => s.run !== null && s.design !== null);
   const project = useSewerStore((s) => s.design?.project ?? null);
+  const local = useMemo(() => (project ? sewerFrame(project).kind !== 'epsg' : false), [project]);
+  const dem = local ? 'manholes' : settings.dem;
   const fileInput = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
 
@@ -57,13 +59,17 @@ export function FloodPanel() {
         </p>
         <div className="flex gap-3 text-[11px] text-ink-soft">
           <label className="flex items-center gap-1">
-            <input type="radio" checked={settings.dem === 'tiles'} onChange={() => setSettings({ dem: 'tiles' })} /> 지형 타일
+            <input type="radio" checked={dem === 'tiles'} disabled={local} onChange={() => setSettings({ dem: 'tiles' })} /> 지형 타일
           </label>
           <label className="flex items-center gap-1">
-            <input type="radio" checked={settings.dem === 'files'} onChange={() => setSettings({ dem: 'files' })} /> 수치지형도
+            <input type="radio" checked={dem === 'files'} disabled={local} onChange={() => setSettings({ dem: 'files' })} /> 수치지형도
+          </label>
+          <label className="flex items-center gap-1" title="맨홀 지반고를 보간해 지형을 만듭니다. 지형 자료가 없거나 도면 좌표 관망일 때 씁니다(도로 굴곡·연석은 반영 안 됨).">
+            <input type="radio" checked={dem === 'manholes'} onChange={() => setSettings({ dem: 'manholes' })} /> 맨홀 지반고
           </label>
         </div>
-        {settings.dem === 'files' && (
+        {local && <p className="text-[10px] text-ink-muted">도면 좌표 관망이라 실제 지형과 겹칠 수 없어 맨홀 지반고로 지형을 만듭니다.</p>}
+        {dem === 'files' && (
           <div>
             <Button onClick={() => fileInput.current?.click()}>
               <FileUp size={12} /> {files.length > 0 ? `${files.length}개 파일` : 'DXF·SHP·XYZ 고르기'}
@@ -102,7 +108,7 @@ export function FloodPanel() {
             <NumberField value={settings.extraMinutes} min={0} onCommit={(v) => setSettings({ extraMinutes: Math.max(0, v) })} />
           </label>
         </div>
-        <label className="flex items-center gap-1.5 text-[11px] text-ink-soft" title="격자 지반고 전체를 맨홀 지반고(중앙값 차이)에 맞춰 평행 이동합니다. 지형 타일의 높이 기준 차이를 줄입니다.">
+        <label className={`flex items-center gap-1.5 text-[11px] text-ink-soft ${dem === 'manholes' ? 'opacity-50' : ''}`} title="격자 지반고 전체를 맨홀 지반고(중앙값 차이)에 맞춰 평행 이동합니다. 지형 타일의 높이 기준 차이를 줄입니다.">
           <input type="checkbox" checked={settings.fitDem} onChange={(e) => setSettings({ fitDem: e.target.checked })} />
           지반고를 맨홀 지반고에 맞춤
         </label>

@@ -10,15 +10,21 @@ import { useFloodStore } from '../store/useFloodStore';
 import { useSewerStore } from '../store/useSewerStore';
 import { useUIStore } from '../store/useUIStore';
 import { downloadText } from '../utils/files';
+import { IdwInterpolator } from '../core/terrain/elevation';
 import { interpolatorFromFiles, sampleTerrainTiles } from './terrainFetch';
 
 let worker: Worker | null = null;
+let rejectWorker: ((e: Error) => void) | null = null;
+/** 실행마다 늘린다. 중지하거나 새로 실행하면 이전 실행은 결과를 버리고 조용히 끝난다. */
+let runId = 0;
+const CANCELLED = '침수 해석을 중지했습니다.';
 
 // 하수 해석 결과가 바뀌면 침수 결과는 맞지 않으므로 지운다
 let lastRun = useSewerStore.getState().run;
 useSewerStore.subscribe((s) => {
   if (s.run === lastRun) return;
   lastRun = s.run;
+  if (useFloodStore.getState().busy) cancelFlood();
   if (useFloodStore.getState().result) useFloodStore.getState().clear();
 });
 
@@ -29,6 +35,7 @@ function runWorker(request: FloodRequest, onProgress: (fraction: number) => void
   const w = new Worker(new URL('../core/flood/flood.worker.ts', import.meta.url), { type: 'module' });
   worker = w;
   return new Promise((resolve, reject) => {
+    rejectWorker = reject;
     w.onmessage = (event: MessageEvent<FloodResponse>) => {
       const m = event.data;
       if (m.type === 'progress') onProgress(m.duration > 0 ? m.t / m.duration : 0);
@@ -41,6 +48,7 @@ function runWorker(request: FloodRequest, onProgress: (fraction: number) => void
     };
     w.onerror = (e) => {
       w.terminate();
+      if (worker === w) worker = null;
       reject(new Error(e.message || '침수 해석 워커를 시작하지 못했습니다.'));
     };
     w.postMessage(request);
@@ -48,8 +56,11 @@ function runWorker(request: FloodRequest, onProgress: (fraction: number) => void
 }
 
 export function cancelFlood(): void {
+  runId++;
   worker?.terminate();
   worker = null;
+  rejectWorker?.(new Error(CANCELLED));
+  rejectWorker = null;
   useFloodStore.getState().setBusy(null);
 }
 
@@ -64,11 +75,15 @@ export async function runFloodAnalysis(files: File[] = []): Promise<void> {
     ui.pushToast({ level: 'info', title: '먼저 하수 해석을 하세요', message: '‘설계·해석’ 또는 ‘현황 해석’으로 SWMM 결과를 만든 뒤 침수 해석을 실행합니다.' });
     return;
   }
-  const s = flood.settings;
+  const local = sewerFrame(project).kind !== 'epsg';
+  // 도면 좌표 관망은 실제 위치를 몰라 지형 자료와 겹칠 수 없으므로 맨홀 지반고로 지형을 만든다
+  const s = local ? { ...flood.settings, dem: 'manholes' as const } : flood.settings;
   if (s.dem === 'files' && files.length === 0) {
     ui.pushToast({ level: 'info', title: '수치지형도 파일을 고르세요' });
     return;
   }
+  const id = ++runId;
+  const stale = () => id !== runId;
   const t0 = performance.now();
   try {
     const f = gridFrame(project, s.cell, s.margin);
@@ -90,15 +105,36 @@ export async function runFloodAnalysis(files: File[] = []): Promise<void> {
     if (s.dem === 'files') {
       flood.setBusy('수치지형도 읽는 중…');
       const { idw, points: count, layers } = await interpolatorFromFiles(files, SEWER_CRS);
+      if (stale()) return;
       for (let k = 0; k < N; k++) {
         const v = idw.at(points[k]);
         if (v) z[k] = v.z;
         if (k % 4000 === 0) {
           useFloodStore.getState().setBusy(`수치지형도로 격자 지반고 만드는 중… ${Math.round((k / N) * 100)}%`);
           await tick();
+          if (stale()) return;
         }
       }
       demLabel = `수치지형도 (${layers.slice(0, 3).join(', ')} · 표고 ${count.toLocaleString()}점)`;
+    }
+    if (s.dem === 'manholes') {
+      flood.setBusy('맨홀 지반고로 격자 지반고 만드는 중…');
+      const idw = new IdwInterpolator(
+        project.nodes.map((n) => ({ position: xyToLngLat(geo, n.x, n.y), z: n.ground })),
+        Math.max(300, s.margin * 3),
+        8,
+      );
+      // 맨홀에서 먼 곳은 알 수 없으므로 가장 높은 맨홀보다 높게 두어 물이 그쪽으로 빠지지 않게 한다
+      const wall = Math.max(...project.nodes.map((n) => n.ground)) + 2;
+      for (let k = 0; k < N; k++) {
+        z[k] = idw.at(points[k])?.z ?? wall;
+        if (k % 4000 === 0) {
+          useFloodStore.getState().setBusy(`맨홀 지반고로 격자 지반고 만드는 중… ${Math.round((k / N) * 100)}%`);
+          await tick();
+          if (stale()) return;
+        }
+      }
+      demLabel = `맨홀 지반고 보간 (${project.nodes.length.toLocaleString()}점${local ? ' · 도면 좌표 관망' : ''})`;
     }
     const missing: number[] = [];
     for (let k = 0; k < N; k++) if (!Number.isFinite(z[k])) missing.push(k);
@@ -109,11 +145,13 @@ export async function runFloodAnalysis(files: File[] = []): Promise<void> {
         (d, t) => useFloodStore.getState().setBusy(`지형 타일 받는 중… ${d}/${t}`),
         15,
       );
+      if (stale()) return;
       missing.forEach((k, i) => (z[k] = values[i]));
       demLabel = demLabel ? `${demLabel} + 빈 곳 지형 타일 ${missing.length.toLocaleString()}셀` : '온라인 지형 타일 (SRTM 30 m 급)';
     }
     const fit = demOffset(project, f, z);
-    if (s.fitDem && fit.samples > 0) for (let k = 0; k < N; k++) z[k] += fit.offset;
+    const shift = s.fitDem && s.dem !== 'manholes';
+    if (shift && fit.samples > 0) for (let k = 0; k < N; k++) z[k] += fit.offset;
 
     // 2) 확산 계산
     const duration = run.output.periods * run.output.reportStepSec + s.extraMinutes * 60;
@@ -123,12 +161,13 @@ export async function runFloodAnalysis(files: File[] = []): Promise<void> {
       { grid: { nx: f.nx, ny: f.ny, cell: f.cell, z }, sources, params: { manning: s.manning, duration, frameInterval } },
       (p) => useFloodStore.getState().setBusy(`침수 확산 계산 중… ${Math.round(p * 100)}%`),
     );
+    if (stale()) return;
     useFloodStore.getState().setResult({
       frame: f,
       z,
       result,
       overflow: nodes,
-      info: { demLabel, offset: s.fitDem ? fit.offset : 0, offsetSpread: fit.spread, duration, elapsedMs: performance.now() - t0 },
+      info: { demLabel, offset: shift ? fit.offset : 0, offsetSpread: fit.spread, duration, elapsedMs: performance.now() - t0 },
     });
     const total = nodes.reduce((a, n) => a + n.volume, 0);
     ui.pushToast({
@@ -137,11 +176,12 @@ export async function runFloodAnalysis(files: File[] = []): Promise<void> {
       message: '지도에 최대 침수 수심이 표시됩니다. 아래 ‘침수 해석’ 탭에서 시간대별로 볼 수 있습니다.',
     });
   } catch (error) {
+    if (stale()) return;
     const msg = error instanceof Error ? error.message : String(error);
     useFloodStore.getState().setError(msg);
     ui.pushToast({ level: 'error', title: '침수 해석을 하지 못했습니다', message: msg });
   } finally {
-    useFloodStore.getState().setBusy(null);
+    if (!stale()) useFloodStore.getState().setBusy(null);
   }
 }
 

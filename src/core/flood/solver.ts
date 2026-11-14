@@ -98,6 +98,7 @@ export function simulateFlood(grid: FloodGrid, sources: FloodSource[], params: F
   };
   const active = sources.filter((s) => s.index >= 0 && s.index < N && s.flows.some((f) => f > 0));
 
+  let si0 = 0, si1 = -1, sj0 = 0, sj1 = -1;
   let t = 0;
   let injected = 0;
   let outflow = 0;
@@ -116,14 +117,16 @@ export function simulateFlood(grid: FloodGrid, sources: FloodSource[], params: F
 
   while (t < params.duration - 1e-9) {
     // 활성 범위를 젖은 셀 + 유입 셀로 다시 잡는다
+    // 물은 한 단계에 이웃 셀까지만 가므로, 젖은 셀은 지난 단계 계산 범위(si0..si1, sj0..sj1) 안에만 있다
     i0 = nx; i1 = -1; j0 = ny; j1 = -1;
     let hmax = 0;
     for (const s of active) {
-      if (sourceFlow(s, t) > 0 || sourceFlow(s, t + maxDt) > 0) grow(s.index % nx, Math.floor(s.index / nx));
+      if (sourceFlow(s, t) > 0 || sourceFlow(s, t + maxDt) > 0 || h[s.index] > dry) grow(s.index % nx, Math.floor(s.index / nx));
+      if (h[s.index] > hmax) hmax = h[s.index];
     }
-    for (let j = 0; j < ny; j++) {
+    for (let j = sj0; j <= sj1; j++) {
       const row = j * nx;
-      for (let i = 0; i < nx; i++) {
+      for (let i = si0; i <= si1; i++) {
         const v = h[row + i];
         if (v > dry) {
           grow(i, j);
@@ -133,6 +136,7 @@ export function simulateFlood(grid: FloodGrid, sources: FloodSource[], params: F
     }
     if (i1 < 0) {
       // 물이 전혀 없다: 다음 유입 시작까지 건너뛴다
+      si0 = 0; si1 = -1; sj0 = 0; sj1 = -1;
       let next = params.duration;
       for (const s of active) for (let k = 0; k < s.times.length; k++) if (s.flows[k] > 0 && s.times[k] > t) next = Math.min(next, k > 0 ? s.times[k - 1] : s.times[k]);
       if (next <= t) next = t + maxDt;
@@ -147,6 +151,7 @@ export function simulateFlood(grid: FloodGrid, sources: FloodSource[], params: F
     }
     i0 = Math.max(0, i0 - 1); i1 = Math.min(nx - 1, i1 + 1);
     j0 = Math.max(0, j0 - 1); j1 = Math.min(ny - 1, j1 + 1);
+    si0 = i0; si1 = i1; sj0 = j0; sj1 = j1;
 
     let dt = hmax > 0.001 ? (alpha * cell) / Math.sqrt(g * hmax) : maxDt;
     dt = Math.min(dt, maxDt, params.duration - t);

@@ -11,8 +11,8 @@ export interface FloodSettings {
   manning: number;
   /** SWMM 해석이 끝난 뒤 더 퍼지게 둘 시간 (분) */
   extraMinutes: number;
-  /** 지반고 자료 */
-  dem: 'tiles' | 'files';
+  /** 지반고 자료: 온라인 지형 타일 · 수치지형도 파일 · 맨홀 지반고 보간 */
+  dem: 'tiles' | 'files' | 'manholes';
   /** 격자 지반고를 맨홀 지반고에 맞춰 평행 이동 */
   fitDem: boolean;
 }
