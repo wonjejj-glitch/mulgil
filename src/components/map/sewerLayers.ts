@@ -1,10 +1,11 @@
 /** 하수 모드 지도 레이어: 맨홀(원)·방류구(심벌)·관거(관경에 따른 굵기, 설계 판정 색)·흐름 방향 화살표·선택 강조. */
 import type { Color, Layer } from '@deck.gl/core';
-import { IconLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { IconLayer, PathLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { DesignResult } from '../../core/sewer/design';
-import { nodePositions } from '../../core/sewer/mapFrame';
+import { nodePositions, sewerFrame, xyToLngLat } from '../../core/sewer/mapFrame';
+import { ringCentroid } from '../../core/sewer/edit';
 import type { SimulationSummary } from '../../core/sewer/report';
-import type { SewerConduit, SewerNode, SewerProject } from '../../core/sewer/types';
+import type { SewerCatchment, SewerConduit, SewerNode, SewerProject } from '../../core/sewer/types';
 import type { LngLat } from '../../core/model/types';
 import type { SewerSelection } from '../../store/useSewerStore';
 import { PALETTE, type RGB } from '../../utils/colorScales';
@@ -13,6 +14,15 @@ import { getIconAtlas, ICON_MAPPING } from './iconAtlas';
 
 export const SEWER_NODE_LAYER = 'sewer-nodes';
 export const SEWER_CONDUIT_LAYER = 'sewer-conduits';
+export const SEWER_CATCHMENT_LAYER = 'sewer-catchments';
+
+export interface SewerCatchmentDatum {
+  catchment: SewerCatchment;
+  ring: LngLat[];
+  /** 경계 중심 → 출구 맨홀 연결선 */
+  link: LngLat[];
+  center: LngLat;
+}
 
 export interface SewerNodeDatum {
   node: SewerNode;
@@ -28,6 +38,8 @@ export interface SewerConduitDatum {
 export interface SewerMapData {
   nodes: SewerNodeDatum[];
   conduits: SewerConduitDatum[];
+  /** 경계를 그린 유역만 */
+  catchments: SewerCatchmentDatum[];
 }
 
 /** 색 범례와 같은 값을 쓴다 (GisMapCanvas 의 SewerLegend). */
@@ -52,7 +64,17 @@ export function sewerMapData(project: SewerProject): SewerMapData {
     const path = [a, b];
     conduits.push({ conduit, path, mid: midpointOfPath(path) });
   }
-  return { nodes, conduits };
+  const frame = sewerFrame(project);
+  const catchments: SewerCatchmentDatum[] = [];
+  for (const catchment of project.catchments) {
+    if (!catchment.polygon || catchment.polygon.length < 3) continue;
+    const ring = catchment.polygon.map(([x, y]) => xyToLngLat(frame, x, y));
+    const [cx, cy] = ringCentroid(catchment.polygon);
+    const center = xyToLngLat(frame, cx, cy);
+    const outlet = positions.get(catchment.outlet);
+    catchments.push({ catchment, ring, center, link: outlet ? [center, outlet] : [] });
+  }
+  return { nodes, conduits, catchments };
 }
 
 function widthOf(diameter: number): number {
@@ -87,6 +109,53 @@ export function buildSewerLayers(input: SewerLayerInput): Layer[] {
     const rgb = !s ? SEWER_COLORS.manhole : s.flood_hours > 0 ? SEWER_COLORS.violation : s.surcharged ? SEWER_COLORS.surcharged : SEWER_COLORS.ok;
     return [...rgb, 255];
   };
+
+  if (data.catchments.length > 0) {
+    const selectedId = selection?.kind === 'catchment' ? selection.id : null;
+    layers.push(
+      new PolygonLayer<SewerCatchmentDatum>({
+        id: SEWER_CATCHMENT_LAYER,
+        data: data.catchments,
+        getPolygon: (d) => d.ring,
+        getFillColor: (d) => (d.catchment.id === selectedId ? [...PALETTE.selection, 70] : [64, 168, 120, 45]),
+        getLineColor: (d) => (d.catchment.id === selectedId ? [...PALETTE.selection, 255] : [64, 168, 120, 220]),
+        getLineWidth: (d) => (d.catchment.id === selectedId ? 2.5 : 1.5),
+        lineWidthUnits: 'pixels',
+        stroked: true,
+        filled: true,
+        pickable: true,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 40],
+        updateTriggers: { getFillColor: selectedId, getLineColor: selectedId, getLineWidth: selectedId },
+      }),
+      new PathLayer<SewerCatchmentDatum>({
+        id: 'sewer-catchment-links',
+        data: data.catchments.filter((d) => d.link.length === 2),
+        getPath: (d) => d.link,
+        getColor: [64, 168, 120, 200],
+        getWidth: 1.5,
+        widthUnits: 'pixels',
+      }),
+    );
+    if (zoom >= 15) {
+      layers.push(
+        new TextLayer<SewerCatchmentDatum>({
+          id: 'sewer-catchment-labels',
+          data: data.catchments,
+          getPosition: (d) => d.center,
+          getText: (d) => `${d.catchment.id}
+${d.catchment.area.toFixed(2)} ha`,
+          getSize: 11,
+          getColor: [200, 240, 215, 255],
+          outlineWidth: 2,
+          outlineColor: [15, 19, 24, 255],
+          fontFamily: 'system-ui, "Segoe UI", sans-serif',
+          fontSettings: { sdf: true },
+          characterSet: 'auto',
+        }),
+      );
+    }
+  }
 
   if (selection?.kind === 'conduit') {
     const datum = data.conduits.find((d) => d.conduit.id === selection.id);

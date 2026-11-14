@@ -22,6 +22,7 @@ import { useUIStore, type BottomTab } from '../../store/useUIStore';
 import { useValidationStore } from '../../store/useValidationStore';
 import { Button } from '../ui/fields';
 import { CriteriaPanel } from './CriteriaPanel';
+import { PeakFactorPanel } from './PeakFactorPanel';
 import { ProfilePanel } from './ProfilePanel';
 import { ResultsTablePanel } from './ResultsTablePanel';
 import { TimeSeriesPanel } from './TimeSeriesPanel';
@@ -295,6 +296,7 @@ export function BottomTimelineDock() {
     { id: 'profile', label: '종단면도' },
     { id: 'table', label: '결과 표' },
     { id: 'criteria', label: '설계기준 검토' },
+    { id: 'peak', label: '시간최대계수' },
     { id: 'validation', label: '관망 검증 결과', badge: issueCount },
     { id: 'log', label: '해석 로그', badge: logAlerts },
   ];
@@ -338,6 +340,7 @@ export function BottomTimelineDock() {
           {tab === 'profile' && <ProfilePanel />}
           {tab === 'table' && <ResultsTablePanel />}
           {tab === 'criteria' && <CriteriaPanel />}
+          {tab === 'peak' && <PeakFactorPanel />}
           {tab === 'validation' && <ValidationPanel />}
           {tab === 'log' && <LogPanel />}
         </div>

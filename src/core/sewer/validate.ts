@@ -146,7 +146,7 @@ function parseCatchment(c: Collector, raw: unknown, index: number): SewerCatchme
   const loc = ['catchments', index];
   const o = (typeof raw === 'object' && raw !== null ? raw : {}) as Raw;
   if (typeof raw !== 'object' || raw === null) c.add('model_type', loc, '객체여야 합니다.');
-  extras(c, o, ['id', 'outlet', 'area', 'impervious', 'width', 'slope', 'runoff_coefficient', 'horton_max', 'horton_min', 'horton_decay'], loc);
+  extras(c, o, ['id', 'outlet', 'area', 'impervious', 'width', 'slope', 'runoff_coefficient', 'horton_max', 'horton_min', 'horton_decay', 'polygon'], loc);
   const catchment: SewerCatchment = {
     id: id(c, o, 'id', loc),
     outlet: id(c, o, 'outlet', loc),
@@ -160,6 +160,12 @@ function parseCatchment(c: Collector, raw: unknown, index: number): SewerCatchme
     horton_decay: num(c, o, 'horton_decay', loc, { exMin: 0, default: 4 }),
   };
   if (catchment.horton_min > catchment.horton_max) c.add('value_error', loc, 'Horton 최소 침투율이 최대 침투율보다 큽니다.');
+  if (o.polygon !== undefined) {
+    const ring = o.polygon;
+    const ok = Array.isArray(ring) && ring.length >= 3 && ring.every((pt) => Array.isArray(pt) && pt.length === 2 && pt.every((v) => typeof v === 'number' && Number.isFinite(v)));
+    if (ok) catchment.polygon = (ring as [number, number][]).map(([x, y]) => [x, y]);
+    else c.add('value_error', [...loc, 'polygon'], '유역 경계는 [x, y] 꼭짓점 3개 이상이어야 합니다.');
+  }
   return catchment;
 }
 

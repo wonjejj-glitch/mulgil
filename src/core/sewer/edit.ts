@@ -4,7 +4,7 @@
  */
 import type { LngLat } from '../model/types';
 import { georeference, lngLatToXy, sewerFrame } from './mapFrame';
-import { defaultConstraints, defaultOptions, type SewerConduit, type SewerNode, type SewerNodeKind, type SewerProject } from './types';
+import { defaultConstraints, defaultOptions, type SewerCatchment, type SewerConduit, type SewerNode, type SewerNodeKind, type SewerProject } from './types';
 
 /** 새 맨홀의 임시 매설 깊이 (지반고 − 관저고, m). 자동 설계가 다시 정한다. */
 export const PLACEHOLDER_DEPTH = 1.8;
@@ -136,8 +136,131 @@ export function deleteSewerNode(project: SewerProject, id: string): boolean {
   if (index < 0) return false;
   project.nodes.splice(index, 1);
   project.conduits = project.conduits.filter((c) => c.upstream !== id && c.downstream !== id);
-  project.catchments = project.catchments.filter((s) => s.outlet !== id);
+  reassignCatchments(project, id);
   return true;
+}
+
+/** 출구 맨홀이 사라지거나 방류구가 된 유역: 그린 경계가 있으면 가장 가까운 다른 맨홀로 옮기고, 없으면 지운다. */
+function reassignCatchments(project: SewerProject, outlet: string): void {
+  project.catchments = project.catchments.filter((s) => {
+    if (s.outlet !== outlet) return true;
+    if (!s.polygon) return false;
+    const [cx, cy] = ringCentroid(s.polygon);
+    const next = nearestJunction(project, cx, cy, outlet);
+    if (!next) return false;
+    s.outlet = next.id;
+    return true;
+  });
+}
+
+/* ------------------------------------------------------------------ 유역 (지도에서 그리기) */
+
+/** 다각형 면적 (m², 신발끈 공식). 꼭짓점은 닫지 않은 목록. */
+export function ringArea(ring: [number, number][]): number {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % ring.length];
+    a += x1 * y2 - x2 * y1;
+  }
+  return Math.abs(a) / 2;
+}
+
+export function ringCentroid(ring: [number, number][]): [number, number] {
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % ring.length];
+    const f = x1 * y2 - x2 * y1;
+    a += f;
+    cx += (x1 + x2) * f;
+    cy += (y1 + y2) * f;
+  }
+  if (Math.abs(a) < 1e-9) {
+    const n = ring.length;
+    return [ring.reduce((s, p) => s + p[0], 0) / n, ring.reduce((s, p) => s + p[1], 0) / n];
+  }
+  return [cx / (3 * a), cy / (3 * a)];
+}
+
+export function pointInRing(x: number, y: number, ring: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function nearestJunction(project: SewerProject, x: number, y: number, except?: string): SewerNode | null {
+  let best: SewerNode | null = null;
+  let bestD = Infinity;
+  for (const n of project.nodes) {
+    if (n.kind !== 'JUNCTION' || n.id === except) continue;
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d < bestD) [best, bestD] = [n, d];
+  }
+  return best;
+}
+
+/**
+ * 유역 출구 맨홀 고르기: 경계 안 맨홀 중 가장 하류(관저고가 가장 낮은) 맨홀, 안에 없으면 중심에서 가장 가까운 맨홀.
+ */
+export function pickCatchmentOutlet(project: SewerProject, ring: [number, number][]): SewerNode | null {
+  const inside = project.nodes.filter((n) => n.kind === 'JUNCTION' && pointInRing(n.x, n.y, ring));
+  if (inside.length > 0) return inside.reduce((a, b) => (b.invert < a.invert ? b : a));
+  const [cx, cy] = ringCentroid(ring);
+  return nearestJunction(project, cx, cy);
+}
+
+/** 경계 모양으로 면적(ha)·폭(m)을 다시 계산한다. 폭 = 면적 / 최장 흐름 길이(≈ 경계 지름의 절반)의 근사. */
+export function updateCatchmentGeometry(c: SewerCatchment): void {
+  if (!c.polygon || c.polygon.length < 3) return;
+  const m2 = ringArea(c.polygon);
+  c.area = Math.max(0.0001, Math.round((m2 / 10000) * 10000) / 10000);
+  let diameter = 0;
+  for (const a of c.polygon) for (const b of c.polygon) diameter = Math.max(diameter, Math.hypot(a[0] - b[0], a[1] - b[1]));
+  const flowLength = Math.max(1, diameter / 2);
+  c.width = Math.max(1, Math.round(m2 / flowLength));
+}
+
+/**
+ * 지도에서 그린 경계(경위도)로 유역을 추가한다. 출구 맨홀이 없으면 null.
+ * 불투수율·유출계수·Horton 값은 같은 관망의 마지막 유역 값(없으면 기본값)을 따른다.
+ */
+export function addSewerCatchment(project: SewerProject, ringLngLat: LngLat[]): { id: string; outlet: string } | null {
+  if (ringLngLat.length < 3) return null;
+  georeference(project);
+  const frame = sewerFrame(project);
+  const ring = ringLngLat.map((p) => lngLatToXy(frame, p)).map(([x, y]) => [mm(x), mm(y)] as [number, number]);
+  if (ringArea(ring) < 1) return null;
+  const outlet = pickCatchmentOutlet(project, ring);
+  if (!outlet) return null;
+  const like = project.catchments[project.catchments.length - 1];
+  const id = nextSewerId('S', project.catchments.map((c) => c.id), 1);
+  const c: SewerCatchment = {
+    id,
+    outlet: outlet.id,
+    area: 0,
+    impervious: like?.impervious ?? 60,
+    width: 100,
+    slope: like?.slope ?? 1,
+    runoff_coefficient: like?.runoff_coefficient ?? 0.65,
+    horton_max: like?.horton_max ?? 75,
+    horton_min: like?.horton_min ?? 5,
+    horton_decay: like?.horton_decay ?? 4,
+    polygon: ring,
+  };
+  updateCatchmentGeometry(c);
+  project.catchments.push(c);
+  return { id, outlet: outlet.id };
+}
+
+export function deleteSewerCatchment(project: SewerProject, id: string): boolean {
+  const before = project.catchments.length;
+  project.catchments = project.catchments.filter((c) => c.id !== id);
+  return project.catchments.length < before;
 }
 
 export function deleteSewerConduit(project: SewerProject, id: string): boolean {
@@ -181,7 +304,7 @@ export function setSewerNodeKind(project: SewerProject, id: string, kind: SewerN
   node.kind = kind;
   if (kind === 'OUTFALL') {
     node.base_flow = 0;
-    project.catchments = project.catchments.filter((s) => s.outlet !== id);
+    reassignCatchments(project, id);
   } else {
     node.boundary = 'FREE';
     node.stage = null;

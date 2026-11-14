@@ -9,6 +9,7 @@
  * - 좌표는 inpReader 가 판별한 좌표계 → WGS84 → EPSG:5186 (m)
  * - 단위는 m·m³/s·ha 로 환산한다 (미국 단위계 파일은 ft·acre·cfs 등에서)
  */
+import type { LngLat } from '../model/types';
 import { wgs84ToEpsg } from '../../utils/geoMath';
 import { readSwmmInp } from '../swmm/inpReader';
 import { SEWER_CRS } from './mapFrame';
@@ -84,6 +85,15 @@ function makeIdMapper(prefix: string) {
 
 function list(ids: string[], max = 8): string {
   return ids.length <= max ? ids.join(', ') : `${ids.slice(0, max).join(', ')} 외 ${ids.length - max}개`;
+}
+
+/** SWMM [POLYGONS] 경계(경위도)를 하수 좌표(EPSG:5186)로. 닫는 점은 뺀다. */
+function polygonOf(ring: LngLat[] | undefined): { polygon?: [number, number][] } {
+  if (!ring || ring.length < 3) return {};
+  const pts = ring.map((p) => wgs84ToEpsg(SEWER_CRS, p)).map(([x, y]) => [r3(x), r3(y)] as [number, number]);
+  const [a, b] = [pts[0], pts[pts.length - 1]];
+  if (a[0] === b[0] && a[1] === b[1]) pts.pop();
+  return pts.length >= 3 ? { polygon: pts } : {};
 }
 
 export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
@@ -203,6 +213,7 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
   const infiltration = new Map(rows('INFILTRATION').map((t) => [t[0], t]));
   const catchments: SewerCatchment[] = [];
   const skippedSubs: string[] = [];
+  const ringOf = new Map(swmm.subcatchments.map((sc) => [sc.id, sc.polygon]));
   for (const t of rows('SUBCATCHMENTS')) {
     const outletId = nodeIds.get(t[2] ?? '');
     const outlet = outletId ? nodeByNewId.get(outletId) : undefined;
@@ -227,6 +238,7 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
       horton_max: Math.max(hMax, hMin),
       horton_min: Math.min(hMax, hMin),
       horton_decay: inf && num(inf[3]) > 0 ? num(inf[3]) : 4,
+      ...polygonOf(ringOf.get(t[0])),
     });
   }
   if (skippedSubs.length > 0) warnings.push(`출구가 맨홀이 아닌(다른 유역·방류구·없는 절점) 유역 ${skippedSubs.length}개는 옮기지 않았습니다: ${list(skippedSubs)}`);

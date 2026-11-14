@@ -94,5 +94,8 @@ export function generateInp(p: SewerProject): string {
 
   add('[REPORT]', 'INPUT NO', 'CONTINUITY YES', 'FLOWSTATS YES', 'SUBCATCHMENTS ALL', 'NODES ALL', 'LINKS ALL', 'AVERAGES NO');
   add('[COORDINATES]', ...p.nodes.map((n) => `${n.id} ${f6(n.x)} ${f6(n.y)}`));
+  // 지도에서 그린 유역 경계 (원본 호환 출력에는 경계가 없어 이 블록이 생기지 않는다)
+  const drawn = p.catchments.filter((s) => s.polygon && s.polygon.length >= 3);
+  if (drawn.length > 0) add('[POLYGONS]', ...drawn.flatMap((s) => s.polygon!.map(([x, y]) => `${s.id} ${f6(x)} ${f6(y)}`)));
   return `${blocks.map((b) => b.join('\n')).join('\n\n')}\n`;
 }

@@ -246,7 +246,16 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
   - '설계·해석 실행'(F5) = `runSewerFromMap` → `runSewerSimulation`(설계 없으면 자동 설계 → SWMM). 반복 검토(관경 자동 확대)는 우측 패널 단추. 오류는 토스트 + 우측 패널.
   - 색: 관거 = 설계 행 status('적합' 여부), 맨홀 = 해석 요약(월류/만관 초과). 설계 전에는 중립색. 굵기 = 관경.
   - **compat 설계 모드·`core/sewer/fixtures/`·`validate.ts` 스키마는 건드리지 않았다.** 빈 프로젝트(`emptySewerProject`)는 스키마 검증(절점 2개·관로 1개 이상)을 통과하지 못하는 편집 중 상태다.
-  - 아직 없는 것: 유역 다각형 작도(유역은 표 편집만, 지도에 안 그림), 압송관·펌프장, 박스관(비원형), 맨홀 라이브러리, 하수 도면 내보내기(Shapefile/DXF), 다중·구역 선택, 관거 꺾임점,
+  - **2단계 (2026-11-14)**:
+    - 유역 작도: `SewerCatchment.polygon?`(5186 m, 닫지 않은 꼭짓점; validate 허용, `generateInp` 는 경계가 있을 때만 [POLYGONS] — 정답 벡터 영향 없음,
+      `georeference` 가 경계도 옮김, SWMM 가져오기는 [POLYGONS] 를 옮김). 도구 'catchment'(A) — `areaDraft` 를 재사용해 `GisMapCanvas` 하수 블록에서 그리고 `finishArea` 가 `addSewerCatchment` 호출.
+      출구 = 경계 안 최저 관저 맨홀/가장 가까운 맨홀(`pickCatchmentOutlet`). 출구 맨홀 삭제·방류구 전환 시 경계 있는 유역은 가까운 맨홀로 옮김(`reassignCatchments`). 선택 kind 'catchment', 레이어 `sewer-catchments`.
+    - 보정·현황: `core/sewer/survey.ts` — `parseSurveyCsv`(머리글 이름으로 맨홀번호·지반고·관저고·깊이), `applySurveyLevels`, `asBuiltDesign`(관경·관저고 그대로 행 계산, `DesignResult.asBuilt=true`).
+      `runSewerSimulation` 은 asBuilt 결과를 재사용하지 않고 새로 설계한다. 수치지형도 DXF: `core/io/dxfElevation.ts` + `terrainFetch.interpolatorFromFiles`(xyz/dxf/shp 분기, 상수 표고 보정 대화상자도 같이 씀).
+    - 성과품: `core/sewer/drawings.ts` — `profileStations`, `profileDxf`(세로 10배, 기입란, 관경별 터파기 단면, 한글은 U+XXXX 이스케이프), `planDxf`, `quantityTakeoff`/`quantityCsv`
+      (터파기 폭 관경×1.2+0.6 m·맨홀 1~5호 규격은 예시값). 하수 도크 '수량 산출' 탭, 종단도 탭의 DXF 단추.
+    - 상수 시간최대계수: `core/engine/peakFactor.ts`(OPTIONS 'Demand Multiplier' 읽기·쓰기, 시나리오 요약) + `app/peakActions.ts`(별도 SimulationManager 로 순차 비교 해석) + 하단 '시간최대계수' 탭.
+  - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.
 

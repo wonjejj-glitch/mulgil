@@ -125,3 +125,24 @@ describe('하수 관망 지도 편집', () => {
     expect(() => parseSewerProject(JSON.parse(JSON.stringify(only)))).not.toThrow();
   });
 });
+
+describe('유역 그리기', () => {
+  it('경계로 면적·출구 맨홀을 정하고, 출구가 지워지면 가까운 맨홀로 옮긴다', async () => {
+    const { addSewerCatchment, deleteSewerNode, ringArea } = await import('./edit');
+    const { demoProject } = await import('./types');
+    const { sewerFrame, xyToLngLat } = await import('./mapFrame');
+    const p = demoProject();
+    p.catchments = [];
+    const frame = sewerFrame(p);
+    // MH5(250,65) 를 둘러싼 100 m × 50 m 사각형
+    const ring = [[200, 40], [300, 40], [300, 90], [200, 90]].map(([x, y]) => xyToLngLat(frame, x, y));
+    const added = addSewerCatchment(p, ring)!;
+    expect(added.outlet).toBe('MH5');
+    const c = p.catchments[0];
+    expect(c.area).toBeCloseTo(0.5, 2);
+    expect(ringArea(c.polygon!)).toBeCloseTo(5000, -1);
+    deleteSewerNode(p, 'MH5');
+    expect(p.catchments).toHaveLength(1);
+    expect(p.catchments[0].outlet).not.toBe('MH5');
+  });
+});

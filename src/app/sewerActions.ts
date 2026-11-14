@@ -3,6 +3,7 @@
  * 계산은 core/sewer(순수 함수), 해석 엔진은 core/swmm(Worker)이 맡는다.
  */
 import { designSewer, type DesignResult } from '../core/sewer/design';
+import { asBuiltDesign } from '../core/sewer/survey';
 import { generateInp } from '../core/sewer/inp';
 import { optimizeSewer } from '../core/sewer/optimize';
 import { fitOutfallInverts } from '../core/sewer/outfall';
@@ -65,9 +66,39 @@ async function simulateDesign(design: DesignResult): Promise<{ summary: Simulati
 export async function runSewerSimulation(): Promise<void> {
   const store = useSewerStore.getState();
   if (store.busy) return;
-  const design = store.design ?? runSewerDesign();
+  // 현황 해석 결과는 재사용하지 않고 새로 설계한다
+  const design = store.design && !store.design.asBuilt ? store.design : runSewerDesign();
   if (!design) return;
   store.setBusy('SWMM 해석 중…');
+  try {
+    const { summary, run } = await simulateDesign(design);
+    store.setSimulation(summary, run);
+    store.setError(null);
+  } catch (error) {
+    store.setError(message(error));
+  } finally {
+    store.setBusy(null);
+  }
+}
+
+/**
+ * 현황 해석: 자동 설계 없이 지금 관경·관저고(측량값 등) 그대로 경사·유속을 검토하고 SWMM 을 돌린다.
+ * 결과는 설계 결과 자리에 들어가 종단도·검토 목록에 그대로 나온다.
+ */
+export async function runSewerAsBuilt(): Promise<void> {
+  const store = useSewerStore.getState();
+  if (store.busy) return;
+  const project = validatedProject();
+  if (!project) return;
+  let design: DesignResult;
+  try {
+    design = asBuiltDesign(project);
+  } catch (error) {
+    store.setError(message(error));
+    return;
+  }
+  store.setDesign(design);
+  store.setBusy('현황 SWMM 해석 중…');
   try {
     const { summary, run } = await simulateDesign(design);
     store.setSimulation(summary, run);

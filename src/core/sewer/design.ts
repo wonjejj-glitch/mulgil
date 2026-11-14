@@ -26,6 +26,8 @@ export interface DesignResult {
   rows: DesignRow[];
   issues: string[];
   feasible: boolean;
+  /** 현황 해석(survey.ts asBuiltDesign) 결과면 true — 관경·관저고를 새로 정하지 않았다. */
+  asBuilt?: boolean;
 }
 
 export class SewerDesignError extends Error {

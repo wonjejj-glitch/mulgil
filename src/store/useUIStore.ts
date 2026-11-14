@@ -2,11 +2,11 @@ import { create } from 'zustand';
 import type { LinkType, LngLat } from '../core/model/types';
 import type { BBox, ImportCrsChoice } from '../utils/geoMath';
 
-export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve' | 'manhole' | 'outfall' | 'conduit';
+export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve' | 'manhole' | 'outfall' | 'conduit' | 'catchment';
 /** 작업 영역: 상수(EPANET 관망) / 하수(useSewerStore 의 하수 프로젝트). */
 export type Domain = 'water' | 'sewer';
-export const SEWER_TOOLS: ReadonlySet<Tool> = new Set(['manhole', 'outfall', 'conduit']);
-export type SewerBottomTab = 'profile' | 'review' | 'simulation';
+export const SEWER_TOOLS: ReadonlySet<Tool> = new Set(['manhole', 'outfall', 'conduit', 'catchment']);
+export type SewerBottomTab = 'profile' | 'review' | 'simulation' | 'quantity';
 export type Selection = { kind: 'node' | 'link'; id: string } | null;
 
 /** 다중 선택(구역 선택·Ctrl+클릭). 단일 선택(selection)과 별개로 관리한다. */
@@ -17,7 +17,7 @@ export interface MultiSelection {
 export type BasemapId = 'osm' | 'satellite' | 'vworld-base' | 'vworld-satellite' | 'vworld-hybrid' | 'none';
 export type NodeTheme = 'none' | 'pressure' | 'head' | 'demand' | 'quality' | 'zone' | 'elevation';
 export type LinkTheme = 'none' | 'velocity' | 'flow' | 'unitHeadloss' | 'quality' | 'zone' | 'diameter';
-export type BottomTab = 'timeline' | 'profile' | 'table' | 'criteria' | 'validation' | 'log';
+export type BottomTab = 'timeline' | 'profile' | 'table' | 'criteria' | 'peak' | 'validation' | 'log';
 export type ModalId = 'validation' | 'simulation' | 'curves' | 'controls' | 'fireflow' | 'correction' | 'sewer' | 'draft' | 'allocate' | 'tools' | null;
 
 /** 지도에서 한 점 고르기 (대화상자를 잠시 닫고 클릭을 기다린다). */

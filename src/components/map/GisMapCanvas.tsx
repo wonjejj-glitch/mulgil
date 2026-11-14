@@ -30,11 +30,11 @@ import { useSwmmStore } from '../../store/useSwmmStore';
 import { SwmmLegend } from '../swmm/SwmmPanels';
 import { buildSwmmLayers } from '../swmm/swmmLayers';
 import { useSwmmThematic } from '../swmm/swmmThematic';
-import { addSewerConduit, addSewerNode, conduitProblem, moveSewerNode } from '../../core/sewer/edit';
+import { addSewerCatchment, addSewerConduit, addSewerNode, conduitProblem, moveSewerNode } from '../../core/sewer/edit';
 import type { SewerNode } from '../../core/sewer/types';
 import { useSewerStore } from '../../store/useSewerStore';
 import { toCss } from '../../utils/colorScales';
-import { buildSewerLayers, SEWER_COLORS, SEWER_CONDUIT_LAYER, SEWER_NODE_LAYER, sewerMapData, type SewerConduitDatum, type SewerMapData, type SewerNodeDatum } from './sewerLayers';
+import { buildSewerLayers, SEWER_CATCHMENT_LAYER, SEWER_COLORS, SEWER_CONDUIT_LAYER, SEWER_NODE_LAYER, sewerMapData, type SewerCatchmentDatum, type SewerConduitDatum, type SewerMapData, type SewerNodeDatum } from './sewerLayers';
 
 const NODE_TOOLS: ReadonlySet<Tool> = new Set(['junction', 'reservoir', 'tank']);
 const LINK_TOOLS: ReadonlySet<Tool> = new Set(['pipe', 'pump', 'valve']);
@@ -52,9 +52,10 @@ const TOOL_HINTS: Record<Tool, string> = {
   manhole: '지도를 클릭해 맨홀을 추가합니다. 지반고는 가까운 절점 값(없으면 0), 관저고는 지반고 − 1.8 m 로 임시로 둡니다.',
   outfall: '지도를 클릭해 방류구(하류 끝)를 추가합니다.',
   conduit: '상류 맨홀 → 하류 맨홀(또는 방류구) 순서로 클릭합니다. 빈 곳을 클릭하면 그 자리에 맨홀을 만듭니다 · 이어 그리기 · Esc/우클릭 종료',
+  catchment: '유역 경계 꼭짓점을 차례로 찍고 더블클릭(또는 첫 점 클릭)으로 닫습니다. 면적은 자동 계산, 출구는 경계 안 가장 낮은 맨홀(없으면 가장 가까운 맨홀) · 우클릭 취소',
 };
 
-const EMPTY_SEWER_DATA: SewerMapData = { nodes: [], conduits: [] };
+const EMPTY_SEWER_DATA: SewerMapData = { nodes: [], conduits: [], catchments: [] };
 
 /** 하수 모드 범례: 관거 = 설계 판정, 맨홀 = SWMM 해석 결과. */
 function SewerLegend() {
@@ -454,6 +455,20 @@ export function GisMapCanvas() {
     const ui = useUIStore.getState();
     ui.setAreaDraft([]);
     if (polygon.length < 3) return;
+    if (ui.domain === 'sewer' && ui.tool === 'catchment') {
+      const sewer = useSewerStore.getState();
+      let added: { id: string; outlet: string } | null = null;
+      sewer.edit((d) => void (added = addSewerCatchment(d, polygon)));
+      const result = added as { id: string; outlet: string } | null;
+      if (!result) {
+        ui.pushToast({ level: 'warning', title: '유역을 만들지 못했습니다', message: '유역 출구가 될 맨홀이 먼저 있어야 하고, 경계가 너무 작으면 안 됩니다.' });
+        return;
+      }
+      const c = useSewerStore.getState().project.catchments.find((x) => x.id === result.id);
+      sewer.select({ kind: 'catchment', id: result.id });
+      ui.pushToast({ level: 'success', title: `유역 ${result.id} 추가 → 출구 ${result.outlet}`, message: `면적 ${c ? c.area.toFixed(3) : '?'} ha. 오른쪽 패널에서 출구 맨홀·불투수율·유출계수를 바꿀 수 있습니다.` });
+      return;
+    }
     const found = objectsInPolygon(useNetworkStore.getState().model, polygon);
     const next = additive ? mergeSets(ui.multiSelection, found, 'union') : found;
     ui.setMultiSelection(next);
@@ -502,6 +517,24 @@ export function GisMapCanvas() {
           sewer.select({ kind: 'node', id });
           return;
         }
+        if (activeTool === 'catchment') {
+          const draft = ui.areaDraft;
+          const map = mapRef.current;
+          if (map && draft.length >= 3) {
+            const first = map.project(draft[0]);
+            if (Math.hypot(first.x - event.point.x, first.y - event.point.y) < 9) {
+              finishArea(draft, false);
+              return;
+            }
+          }
+          const last = draft[draft.length - 1];
+          if (map && last) {
+            const p = map.project(last);
+            if (Math.hypot(p.x - event.point.x, p.y - event.point.y) < 5) return;
+          }
+          ui.setAreaDraft([...draft, lngLat]);
+          return;
+        }
         if (activeTool === 'conduit') {
           const start = ui.sewerDrawStart;
           if (!start) {
@@ -537,7 +570,9 @@ export function GisMapCanvas() {
         // 선택 도구
         if (node) return sewer.select({ kind: 'node', id: node.id });
         const conduit = pickSewerConduit(event.point);
-        sewer.select(conduit ? { kind: 'conduit', id: conduit.id } : null);
+        if (conduit) return sewer.select({ kind: 'conduit', id: conduit.id });
+        const catchment = pick(event.point, [SEWER_CATCHMENT_LAYER], 1)?.object as SewerCatchmentDatum | undefined;
+        sewer.select(catchment ? { kind: 'catchment', id: catchment.catchment.id } : null);
         return;
       }
 
@@ -621,13 +656,13 @@ export function GisMapCanvas() {
         ui.setDrawing({ ...drawing, vertices: [...drawing.vertices, lngLat] });
       }
     },
-    [pickNodeForClick, pickLink, finishLink, finishArea, pickSewerNode, pickSewerConduit],
+    [pickNodeForClick, pickLink, finishLink, finishArea, pickSewerNode, pickSewerConduit, pick],
   );
 
   const onDblClick = useCallback(
     (event: MapLayerMouseEvent) => {
       const ui = useUIStore.getState();
-      if (ui.tool === 'area') {
+      if (ui.tool === 'area' || (ui.tool === 'catchment' && ui.domain === 'sewer')) {
         event.preventDefault();
         const map = mapRef.current;
         // 더블클릭의 두 클릭이 넣은 꼭짓점 중복을 걷어낸다.

@@ -1,14 +1,14 @@
 /** 하수 모드 우측 패널: 관망 요약·설계 실행, 선택한 맨홀/관거 속성 편집, 설계값·검토 판정. */
-import { ArrowDownToLine, Mountain, Play, RefreshCw, Repeat, SlidersHorizontal, TriangleExclamationPoint, Wand2 } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { ArrowDownToLine, ClipboardList, FileUp, Gauge, Mountain, Play, RefreshCw, Repeat, SlidersHorizontal, Trash2, TriangleExclamationPoint, Wand2 } from 'lucide-react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { applyDesignToProject, fitOutfallDepth, runSewerDesign, runSewerOptimize } from '../../app/sewerActions';
-import { correctSewerGround, runSewerFromMap } from '../../app/sewerMapActions';
+import { correctSewerGround, correctSewerGroundFromFiles, deleteSewerSelection, importSewerSurvey, runSewerAsBuiltFromMap, runSewerFromMap } from '../../app/sewerMapActions';
 import { formatNumber } from '../../core/model/units';
 import { idProblem, renameSewerConduit, renameSewerNode, setSewerNodeKind, sewerSummary } from '../../core/sewer/edit';
 import { isGeoreferenced } from '../../core/sewer/mapFrame';
 import { REVIEW_KINDS, reviewSewer, type Verdict } from '../../core/sewer/review';
 import { buildNetwork } from '../../core/sewer/topology';
-import type { SewerBoundary, SewerConduit, SewerNode, SewerNodeKind } from '../../core/sewer/types';
+import type { SewerBoundary, SewerCatchment, SewerConduit, SewerNode, SewerNodeKind } from '../../core/sewer/types';
 import { parseSewerProject, SewerValidationError } from '../../core/sewer/validate';
 import { useSewerStore } from '../../store/useSewerStore';
 import { useUIStore } from '../../store/useUIStore';
@@ -206,6 +206,111 @@ function ConduitSection({ conduit }: { conduit: SewerConduit }) {
   );
 }
 
+function CatchmentSection({ catchment }: { catchment: SewerCatchment }) {
+  const edit = useSewerStore((s) => s.edit);
+  const nodes = useSewerStore((s) => s.project.nodes);
+  const junctions = useMemo(() => nodes.filter((n) => n.kind === 'JUNCTION').map((n) => n.id), [nodes]);
+  const intensity = useSewerStore((s) => s.project.options.design_intensity);
+  const patch = (recipe: (c: SewerCatchment) => void) =>
+    edit((d) => {
+      const c = d.catchments.find((x) => x.id === catchment.id);
+      if (c) recipe(c);
+    });
+  const drawn = Boolean(catchment.polygon);
+  const q = (catchment.runoff_coefficient * intensity * catchment.area) / 360;
+  return (
+    <Section
+      title={`유역 ${catchment.id}`}
+      action={
+        <button type="button" className="text-[11px] text-ink-muted hover:text-critical" onClick={deleteSewerSelection} title="이 유역을 지웁니다 (Delete)">
+          <Trash2 size={13} />
+        </button>
+      }
+    >
+      <FieldRow label="출구 맨홀">
+        <SelectField<string> value={catchment.outlet} options={junctions.map((id) => ({ value: id, label: id }))} onChange={(v) => patch((c) => void (c.outlet = v))} />
+      </FieldRow>
+      <FieldRow label="면적" unit="ha">
+        {drawn ? <ReadonlyValue>{catchment.area.toFixed(4)}</ReadonlyValue> : <NumberField value={catchment.area} min={0.0001} step={0.01} onCommit={(v) => patch((c) => void (c.area = v))} />}
+      </FieldRow>
+      <FieldRow label="유출계수 C">
+        <NumberField value={catchment.runoff_coefficient} min={0} step={0.05} onCommit={(v) => patch((c) => void (c.runoff_coefficient = Math.min(1, v)))} />
+      </FieldRow>
+      <FieldRow label="불투수율" unit="%">
+        <NumberField value={catchment.impervious} min={0} step={5} onCommit={(v) => patch((c) => void (c.impervious = Math.min(100, v)))} />
+      </FieldRow>
+      <FieldRow label="경사" unit="%">
+        <NumberField value={catchment.slope} min={0.01} step={0.1} onCommit={(v) => patch((c) => void (c.slope = Math.min(100, v)))} />
+      </FieldRow>
+      <FieldRow label="폭 (SWMM)" unit="m">
+        <NumberField value={catchment.width} min={1} onCommit={(v) => patch((c) => void (c.width = v))} />
+      </FieldRow>
+      <Row label="합리식 유출량" unit="m³/s">
+        {q.toFixed(4)}
+      </Row>
+      <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
+        {drawn ? '면적·폭은 그린 경계에서 계산했습니다. ' : ''}Q = C · I · A / 360 (I = 설계 강우강도 {intensity} mm/h). SWMM 해석은 강우 곡선과 Horton 침투로 유출을 계산합니다.
+      </p>
+    </Section>
+  );
+}
+
+/** 지반고·관저고 보정: 지형 타일 · 수치지형도(DXF·SHP·XYZ) · 맨홀 측량 성과 표. */
+function CorrectionSection({ disabled, georeferenced }: { disabled: boolean; georeferenced: boolean }) {
+  const [keepDepth, setKeepDepth] = useState(true);
+  const terrainInput = useRef<HTMLInputElement>(null);
+  const surveyInput = useRef<HTMLInputElement>(null);
+  return (
+    <Section title="지반고 · 관저고 보정">
+      <label className="mb-1.5 flex items-center gap-1.5 text-[11px] text-ink-soft">
+        <input type="checkbox" checked={keepDepth} onChange={(e) => setKeepDepth(e.target.checked)} />
+        관저고도 같은 만큼 옮기기 (매설 깊이 유지)
+      </label>
+      <div className="grid grid-cols-2 gap-1.5">
+        <Button disabled={disabled || !georeferenced} onClick={() => terrainInput.current?.click()} title="수치지형도 DXF(등고선·표고점), Shapefile(.shp 묶음·.zip), 표고점 텍스트(.xyz·.csv)로 지반고를 보간합니다">
+          <FileUp size={13} />
+          수치지형도
+        </Button>
+        <Button disabled={disabled} onClick={() => void correctSewerGround(keepDepth)} title="온라인 지형 타일(SRTM 30 m 급, 수 m 오차)에서 지반고를 읽습니다">
+          <Mountain size={13} />
+          지형 타일
+        </Button>
+        <Button className="col-span-2" disabled={disabled} onClick={() => surveyInput.current?.click()} title="맨홀번호·지반고·관저고(또는 깊이) 열이 있는 CSV 를 같은 번호의 맨홀에 넣습니다">
+          <ClipboardList size={13} />
+          맨홀 측량 성과 (CSV) 반영
+        </Button>
+      </div>
+      <p className="mt-1.5 text-[10px] leading-relaxed text-ink-muted">
+        측량 성과 표 머리글 예: 맨홀번호, 지반고, 관저고 (또는 깊이). 측량 관저고로 검토하려면 ‘현황 해석’을 쓰세요 — 자동 설계는 관저고를 다시 계산합니다.
+        {!georeferenced && ' 도면 좌표 관망이라 수치지형도 보정은 쓸 수 없습니다.'}
+      </p>
+      <input
+        ref={terrainInput}
+        type="file"
+        multiple
+        accept=".dxf,.shp,.dbf,.prj,.cpg,.shx,.zip,.xyz,.txt,.csv,.pts"
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          if (files.length > 0) void correctSewerGroundFromFiles(files, keepDepth);
+        }}
+      />
+      <input
+        ref={surveyInput}
+        type="file"
+        accept=".csv,.txt,.tsv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (file) void importSewerSurvey(file);
+        }}
+      />
+    </Section>
+  );
+}
+
 export function SewerPropertyPanel() {
   const project = useSewerStore((s) => s.project);
   const design = useSewerStore((s) => s.design);
@@ -230,6 +335,7 @@ export function SewerPropertyPanel() {
 
   const node = selection?.kind === 'node' ? project.nodes.find((n) => n.id === selection.id) : undefined;
   const conduit = selection?.kind === 'conduit' ? project.conduits.find((c) => c.id === selection.id) : undefined;
+  const catchment = selection?.kind === 'catchment' ? project.catchments.find((c) => c.id === selection.id) : undefined;
 
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-line bg-panel">
@@ -260,7 +366,9 @@ export function SewerPropertyPanel() {
         )}
         {design && (
           <p className={`mt-1.5 rounded border px-2 py-1.5 text-[11px] ${design.feasible ? 'border-good/40 bg-good/10' : 'border-warn/40 bg-warn/10'} text-ink`}>
-            {design.feasible ? '자동 설계: 모든 제약 만족' : `자동 설계: 제약 위반 ${design.issues.length}건`} — 입력에는 아직 반영하지 않았습니다.
+            {design.asBuilt
+              ? `현황 해석: ${design.feasible ? '모든 기준 만족' : `기준 위반 ${design.issues.length}건`} — 관경·관저고는 입력 그대로입니다.`
+              : `${design.feasible ? '자동 설계: 모든 제약 만족' : `자동 설계: 제약 위반 ${design.issues.length}건`} — 입력에는 아직 반영하지 않았습니다.`}
           </p>
         )}
         <div className="mt-2 grid grid-cols-2 gap-1.5">
@@ -276,7 +384,7 @@ export function SewerPropertyPanel() {
             <Repeat size={13} />
             반복 검토
           </Button>
-          <Button disabled={!design} onClick={applyDesignToProject} title="설계한 관경·관저고·옵셋을 관망에 반영합니다 (실행 취소 가능)">
+          <Button disabled={!design || design.asBuilt} onClick={applyDesignToProject} title="설계한 관경·관저고·옵셋을 관망에 반영합니다 (실행 취소 가능)">
             <RefreshCw size={13} />
             설계 반영
           </Button>
@@ -284,9 +392,9 @@ export function SewerPropertyPanel() {
             <ArrowDownToLine size={13} />
             방류구 깊이
           </Button>
-          <Button disabled={busy !== null} onClick={() => void correctSewerGround(true)} title="온라인 지형 타일에서 모든 절점의 지반고를 읽어 넣습니다 (매설 깊이 유지, 실행 취소 가능)">
-            <Mountain size={13} />
-            지반고 보정
+          <Button disabled={busy !== null} onClick={() => void runSewerAsBuiltFromMap()} title="자동 설계 없이 지금 관경·관저고(측량값) 그대로 검토하고 SWMM 해석합니다">
+            <Gauge size={13} />
+            현황 해석
           </Button>
         </div>
         <Button className="mt-1.5 w-full" onClick={() => useUIStore.getState().openModal('sewer')} title="설계 제약·강우·유역과 맨홀·관거 표를 한꺼번에 편집합니다">
@@ -296,11 +404,14 @@ export function SewerPropertyPanel() {
         {busy && <p className="mt-1.5 text-[11px] text-ink-soft">{busy}</p>}
       </Section>
 
+      <CorrectionSection disabled={busy !== null} georeferenced={georeferenced} />
+
       {node && <NodeSection key={node.id} node={node} />}
       {conduit && <ConduitSection key={conduit.id} conduit={conduit} />}
-      {!node && !conduit && (
+      {catchment && <CatchmentSection key={catchment.id} catchment={catchment} />}
+      {!node && !conduit && !catchment && (
         <div className="px-3 py-3 text-[11px] leading-relaxed text-ink-muted">
-          지도에서 맨홀·관거를 클릭하면 속성을 편집할 수 있습니다. 맨홀(M)·방류구(O)를 찍고 관거(C)는 상류 → 하류 순서로 잇습니다. 맨홀을 끌면 옮겨지고 Delete 로 지웁니다.
+          지도에서 맨홀·관거·유역을 클릭하면 속성을 편집할 수 있습니다. 맨홀(M)·방류구(O)를 찍고 관거(C)는 상류 → 하류 순서로 잇습니다. 유역(A)은 경계를 그리면 면적과 출구 맨홀이 정해집니다. 맨홀을 끌면 옮겨지고 Delete 로 지웁니다.
         </div>
       )}
     </aside>

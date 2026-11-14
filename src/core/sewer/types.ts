@@ -53,6 +53,8 @@ export interface SewerCatchment {
   horton_max: number;
   horton_min: number;
   horton_decay: number;
+  /** 지도에서 그린 유역 경계 (투영 좌표 m, 닫지 않은 꼭짓점 목록). 없으면 면적만 있는 유역. */
+  polygon?: [number, number][];
 }
 
 export interface RainPoint {

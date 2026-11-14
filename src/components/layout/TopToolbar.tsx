@@ -1,4 +1,5 @@
 import {
+  Hexagon,
   ArrowDownToLine,
   BookOpen,
   CloudRain,
@@ -93,6 +94,7 @@ const SEWER_TOOL_LIST: typeof TOOLS = [
   { tool: 'manhole', label: '맨홀', shortcut: 'M', icon: Disc },
   { tool: 'outfall', label: '방류구', shortcut: 'O', icon: ArrowDownToLine },
   { tool: 'conduit', label: '관거', shortcut: 'C', icon: TrendingDown },
+  { tool: 'catchment', label: '유역', shortcut: 'A', icon: Hexagon },
 ];
 
 const DOMAINS: { id: Domain; label: string; icon: LucideIcon; title: string }[] = [

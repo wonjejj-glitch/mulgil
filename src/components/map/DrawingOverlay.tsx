@@ -51,7 +51,7 @@ export function DrawingOverlay() {
   }
   const snapPoint = snapNode ? toScreen(snapNode.position) : null;
   const labelAt = rubberBand.length > 0 ? rubberBand[rubberBand.length - 1] : null;
-  const area = tool === 'area' && areaDraft.length > 0 ? [...areaDraft, ...(cursor ? [cursor] : [])].map(toScreen) : [];
+  const area = (tool === 'area' || tool === 'catchment') && areaDraft.length > 0 ? [...areaDraft, ...(cursor ? [cursor] : [])].map(toScreen) : [];
 
   return (
     <svg className="pointer-events-none absolute inset-0 h-full w-full">

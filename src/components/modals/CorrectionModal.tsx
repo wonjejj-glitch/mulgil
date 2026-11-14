@@ -1,7 +1,7 @@
 import { FileUp, LoaderCircle, Mountain, Route } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import { fetchOsmRoads } from '../../app/osmRoads';
-import { interpolatorFromShapefiles, interpolatorFromXyz, sampleTerrainTiles } from '../../app/terrainFetch';
+import { interpolatorFromFiles, sampleTerrainTiles } from '../../app/terrainFetch';
 import { computeLinkLength } from '../../core/model/networkEdit';
 import { snapNetworkToRoads, type SnapResult } from '../../core/model/roadSnap';
 import { formatNumber, isUsUnits } from '../../core/model/units';
@@ -169,11 +169,10 @@ function ElevationSection() {
         );
         label = '온라인 지형 타일 (SRTM 30 m 급)';
       } else {
-        if (files.length === 0) throw new Error('수치지형도 파일(.shp+.dbf+.prj 또는 .zip) 또는 표고점 텍스트(.xyz·.txt·.csv)를 먼저 고르세요.');
+        if (files.length === 0) throw new Error('수치지형도 파일(.dxf, .shp+.dbf+.prj 또는 .zip) 또는 표고점 텍스트(.xyz·.txt·.csv)를 먼저 고르세요.');
         setBusy('수치지형도 읽는 중…');
         const fallback = model.crs.kind === 'epsg' ? model.crs.code : null;
-        const isXyz = files.every((f) => /\.(xyz|txt|csv|pts)$/i.test(f.name));
-        const { idw, points, layers } = isXyz ? await interpolatorFromXyz(files, fallback) : await interpolatorFromShapefiles(files, fallback);
+        const { idw, points, layers } = await interpolatorFromFiles(files, fallback);
         values = junctions.map((n) => idw.at(n.position)?.z);
         label = `수치지형도 (${layers.join(', ')} · 표고 ${points.toLocaleString()}점)`;
       }
@@ -250,7 +249,7 @@ function ElevationSection() {
             ref={fileInput}
             type="file"
             multiple
-            accept=".shp,.dbf,.prj,.cpg,.shx,.zip,.xyz,.txt,.csv,.pts"
+            accept=".dxf,.shp,.dbf,.prj,.cpg,.shx,.zip,.xyz,.txt,.csv,.pts"
             className="hidden"
             onChange={(e) => {
               setFiles(Array.from(e.target.files ?? []));
@@ -265,7 +264,7 @@ function ElevationSection() {
             <span className="truncate text-[11px] text-ink-muted">{files.length > 0 ? files.map((f) => f.name).join(', ') : '선택한 파일 없음'}</span>
           </div>
           <Note>
-            국토지리정보원 수치지형도의 표고점·등고선 레이어(.shp+.dbf+.prj 를 함께 또는 .zip)를 넣으세요. 속성 CONT·NUME·ELEV·표고 또는 Z 좌표에서 표고를 읽고, 반경
+            국토지리정보원 수치지형도를 넣으세요: DXF(등고선·표고점 레이어를 자동으로 고름) 또는 표고점·등고선 Shapefile(.shp+.dbf+.prj 를 함께 또는 .zip). 속성 CONT·NUME·ELEV·표고 또는 Z 좌표에서 표고를 읽고, 반경
             300 m 안 가까운 8개 점을 거리 가중 평균합니다. 측량 성과·CAD 점고도·DEM 을 점으로 내보낸 표고점 텍스트(.xyz·.txt·.csv, 줄마다 X Y Z 또는 번호 X Y Z)도
             넣을 수 있습니다.
           </Note>

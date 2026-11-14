@@ -8,7 +8,7 @@ import { demoProject, type SewerProject } from '../core/sewer/types';
 const MAX_UNDO = 50;
 
 /** 지도에서 고른 하수 객체 (하수 모드). */
-export type SewerSelection = { kind: 'node' | 'conduit'; id: string } | null;
+export type SewerSelection = { kind: 'node' | 'conduit' | 'catchment'; id: string } | null;
 
 interface SewerState {
   project: SewerProject;

@@ -72,5 +72,8 @@ export function georeference(project: SewerProject, anchor: LngLat = DEFAULT_ANC
     n.x = mm(frame.base[0] + n.x - frame.origin[0]);
     n.y = mm(frame.base[1] + n.y - frame.origin[1]);
   }
+  for (const c of project.catchments ?? []) {
+    if (c.polygon) c.polygon = c.polygon.map(([x, y]) => [mm(frame.base[0] + x - frame.origin[0]), mm(frame.base[1] + y - frame.origin[1])]);
+  }
   return true;
 }

@@ -2,9 +2,9 @@
  * 하수 모드(지도 편집) 동작: 영역 전환, 지도 맞춤, 삭제, 설계·해석 실행, SWMM 가져오기, 지반고 보정.
  * 편집 연산 자체는 core/sewer/edit.ts(순수 함수), 설계·해석은 app/sewerActions.ts 를 쓴다.
  */
-import { applyGroundLevels, deleteSewerConduit, deleteSewerNode, emptySewerProject } from '../core/sewer/edit';
+import { applyGroundLevels, deleteSewerCatchment, deleteSewerConduit, deleteSewerNode, emptySewerProject } from '../core/sewer/edit';
 import { sewerProjectFromSwmm } from '../core/sewer/fromSwmmInp';
-import { isGeoreferenced, nodePositions } from '../core/sewer/mapFrame';
+import { isGeoreferenced, nodePositions, sewerFrame, xyToLngLat } from '../core/sewer/mapFrame';
 import type { LngLat } from '../core/model/types';
 import { looksLikeSwmm } from '../core/swmm/inpReader';
 import { useSewerStore, type SewerSelection } from '../store/useSewerStore';
@@ -13,8 +13,10 @@ import { useUIStore, type Domain } from '../store/useUIStore';
 import { bboxOf } from '../utils/geoMath';
 import { decodeText } from '../utils/files';
 import { closeSwmm } from './actions';
-import { runSewerSimulation } from './sewerActions';
-import { sampleTerrainTiles } from './terrainFetch';
+import { runSewerAsBuilt, runSewerSimulation } from './sewerActions';
+import { interpolatorFromFiles, sampleTerrainTiles } from './terrainFetch';
+import { applySurveyLevels, parseSurveyCsv } from '../core/sewer/survey';
+import { SEWER_CRS } from '../core/sewer/mapFrame';
 
 /** 하수 관망 전체가 보이게 지도를 맞춘다. */
 export function fitToSewer(): void {
@@ -41,6 +43,11 @@ export function focusSewerObject(selection: NonNullable<SewerSelection>): void {
   if (selection.kind === 'node') {
     const p = positions.get(selection.id);
     if (p) points = [p];
+  } else if (selection.kind === 'catchment') {
+    const c = project.catchments.find((x) => x.id === selection.id);
+    const frame = sewerFrame(project);
+    if (c?.polygon) points = c.polygon.map(([x, y]) => xyToLngLat(frame, x, y));
+    else if (c) points = [positions.get(c.outlet)].filter((p): p is LngLat => p !== undefined);
   } else {
     const c = project.conduits.find((x) => x.id === selection.id);
     if (c) points = [positions.get(c.upstream), positions.get(c.downstream)].filter((p): p is LngLat => p !== undefined);
@@ -53,7 +60,7 @@ export function deleteSewerSelection(): void {
   const store = useSewerStore.getState();
   const selection = store.selection;
   if (!selection) return;
-  store.edit((d) => void (selection.kind === 'node' ? deleteSewerNode(d, selection.id) : deleteSewerConduit(d, selection.id)));
+  store.edit((d) => void (selection.kind === 'node' ? deleteSewerNode(d, selection.id) : selection.kind === 'catchment' ? deleteSewerCatchment(d, selection.id) : deleteSewerConduit(d, selection.id)));
   store.select(null);
 }
 
@@ -187,4 +194,87 @@ export async function correctSewerGround(keepDepth: boolean): Promise<void> {
   } finally {
     useSewerStore.getState().setBusy(null);
   }
+}
+
+/**
+ * 수치지형도(DXF·Shapefile)나 표고점 텍스트로 모든 절점 지반고를 보간해 넣는다 (실행 취소 한 단계).
+ * 좌표계를 알 수 없는 자료는 하수 관망 좌표계(EPSG:5186)로 본다.
+ */
+export async function correctSewerGroundFromFiles(files: File[], keepDepth: boolean): Promise<void> {
+  const ui = useUIStore.getState();
+  const store = useSewerStore.getState();
+  const before = store.project;
+  if (store.busy || files.length === 0) return;
+  if (!isGeoreferenced(before)) {
+    ui.pushToast({ level: 'warning', title: '실제 위치가 없는 관망입니다', message: '도면 좌표(임의 평면) 관망은 지형 자료와 위치가 맞지 않아 지반고를 바꾸지 않았습니다.' });
+    return;
+  }
+  store.setBusy('수치지형도 읽는 중…');
+  try {
+    const { idw, points, layers } = await interpolatorFromFiles(files, SEWER_CRS);
+    const positions = nodePositions(before);
+    const byId = new Map(before.nodes.map((n) => [n.id, idw.at(positions.get(n.id)!)?.z ?? NaN]));
+    const missing = [...byId.values()].filter((v) => !Number.isFinite(v)).length;
+    let stats = { changed: 0, invertAdjusted: 0, meanAbs: 0, maxAbs: 0 };
+    useSewerStore.getState().edit((d) => {
+      stats = applyGroundLevels(d, d.nodes.map((n) => byId.get(n.id) ?? NaN), keepDepth);
+    });
+    ui.pushToast({
+      level: missing > 0 || stats.invertAdjusted > 0 ? 'warning' : 'success',
+      title: `수치지형도 지반고 보정 — ${stats.changed}/${before.nodes.length}개 변경`,
+      message:
+        `표고 ${points.toLocaleString()}점 (${layers.slice(0, 4).join(', ')}${layers.length > 4 ? ' …' : ''}) · 평균 |차이| ${stats.meanAbs.toFixed(2)} m · 최대 ${stats.maxAbs.toFixed(2)} m · ` +
+        (keepDepth ? '관저고도 같은 만큼 옮김' : '지반고만 변경') +
+        (missing > 0 ? ` · 300 m 안에 표고 자료가 없는 ${missing}개는 그대로 둠` : '') +
+        ' · Ctrl+Z 로 되돌릴 수 있습니다.',
+    });
+  } catch (error) {
+    ui.pushToast({ level: 'error', title: '수치지형도를 읽지 못했습니다', message: error instanceof Error ? error.message : String(error) });
+  } finally {
+    useSewerStore.getState().setBusy(null);
+  }
+}
+
+/** 맨홀 측량 성과 표(CSV·TXT: 맨홀번호·지반고·관저고·깊이)를 같은 번호의 맨홀에 넣는다 (실행 취소 한 단계). */
+export async function importSewerSurvey(file: File): Promise<void> {
+  const ui = useUIStore.getState();
+  try {
+    const { rows, columns } = parseSurveyCsv(decodeText(await file.arrayBuffer()));
+    let result = { matched: 0, groundChanged: 0, invertChanged: 0, unknown: [] as string[], rejected: [] as string[] };
+    useSewerStore.getState().edit((d) => {
+      result = applySurveyLevels(d, rows);
+    });
+    const details = [
+      ...(result.unknown.length ? [`관망에 없는 번호 ${result.unknown.length}개: ${result.unknown.slice(0, 20).join(', ')}${result.unknown.length > 20 ? ' …' : ''}`] : []),
+      ...(result.rejected.length ? [`관저고가 지반고 이상이라 건너뜀: ${result.rejected.slice(0, 20).join(', ')}`] : []),
+    ];
+    ui.pushToast({
+      level: details.length > 0 ? 'warning' : 'success',
+      title: `측량 성과 반영 — 맨홀 ${result.matched}/${rows.length}개`,
+      message: `읽은 열: ${columns.join(' · ')} · 지반고 ${result.groundChanged}개 · 관저고 ${result.invertChanged}개 변경. 자동 설계는 관저고를 다시 계산하므로, 측량값 그대로 보려면 ‘현황 해석’을 누르세요.`,
+      details,
+    });
+  } catch (error) {
+    ui.pushToast({ level: 'error', title: `${file.name} 을(를) 읽지 못했습니다`, message: error instanceof Error ? error.message : String(error) });
+  }
+}
+
+/** 하수 모드 '현황 해석' (설계 없이 지금 관저고로). */
+export async function runSewerAsBuiltFromMap(): Promise<void> {
+  const ui = useUIStore.getState();
+  await runSewerAsBuilt();
+  const { error, simulation, design } = useSewerStore.getState();
+  if (error) {
+    ui.pushToast({ level: 'error', title: '현황 해석을 하지 못했습니다', message: error });
+    return;
+  }
+  if (!simulation || !design) return;
+  const nodes = Object.values(simulation.node_summary);
+  const flooded = nodes.filter((n) => n.flood_hours > 0).length;
+  ui.pushToast({
+    level: design.feasible && flooded === 0 ? 'success' : 'warning',
+    title: `현황 해석 완료 — 기준 위반 관거 ${design.issues.length}개 · 월류 ${flooded}곳`,
+    message: '관경·관저고는 바꾸지 않았습니다. 아래 ‘검토 목록’과 종단도에서 확인하세요.',
+  });
+  ui.setSewerBottomTab('review');
 }

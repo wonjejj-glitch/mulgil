@@ -1,6 +1,7 @@
 /**
  * 지반고 샘플링 (브라우저 전용): 온라인 지형 타일을 내려받아 읽거나, 수치지형도 Shapefile 로 보간기를 만든다.
  */
+import { parseDxfElevations, type DxfElevation } from '../core/io/dxfElevation';
 import { loadShapefiles } from '../core/io/loadShapefiles';
 import type { LngLat } from '../core/model/types';
 import {
@@ -118,4 +119,47 @@ export async function interpolatorFromShapefiles(files: File[], fallbackCrs: str
     }
   }
   return { idw: new IdwInterpolator(points, 300, 8), points: points.length, layers: set.layers };
+}
+
+/** 수치지형도 DXF(등고선·표고점)로 IDW 보간기를 만든다. 등고선은 선 위를 10 m 간격으로 채운다. */
+export async function interpolatorFromDxf(files: File[], fallbackCrs: string | null): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
+  const raw: DxfElevation[] = [];
+  const layers: string[] = [];
+  for (const file of files) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let text: string;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      text = new TextDecoder('euc-kr').decode(bytes);
+    }
+    const parsed = parseDxfElevations(text);
+    raw.push(...parsed.points.map((p) => ({ ...p, line: p.line < 0 ? -1 : p.line + raw.length * 1e6 })));
+    layers.push(...parsed.layers.map((l) => `${file.name}:${l}`));
+  }
+  if (raw.length === 0) throw new Error('DXF 에서 표고 값을 찾지 못했습니다. 등고선(고도 값이 있는 폴리선)·표고점이 들어 있는 수치지형도 DXF 인지 확인하세요.');
+  const detected = detectCrs(raw.map((r) => r.xy));
+  const code = detected === 'local' ? fallbackCrs : detected;
+  if (!code || code === 'local') throw new Error('DXF 좌표계를 알 수 없습니다. 왼쪽 패널 ‘가져오기 좌표계’를 수치지형도 좌표계(보통 EPSG:5186 중부원점)로 맞추세요.');
+  const crs = code === 'wgs84' ? ({ kind: 'wgs84' } as const) : ({ kind: 'epsg', code } as const);
+  const points: ElevationPoint[] = [];
+  const byLine = new Map<number, DxfElevation[]>();
+  for (const r of raw) {
+    if (r.line < 0) points.push({ position: toWgs84(crs, r.xy), z: r.z });
+    else byLine.set(r.line, [...(byLine.get(r.line) ?? []), r]);
+  }
+  for (const line of byLine.values()) {
+    const ll = line.map((r) => toWgs84(crs, r.xy));
+    for (const pt of line.length > 1 ? densify(ll, 10) : ll) points.push({ position: pt, z: line[0].z });
+  }
+  return { idw: new IdwInterpolator(points, 300, 8), points: points.length, layers };
+}
+
+/** 파일 확장자로 표고점 텍스트 · DXF · Shapefile 을 골라 보간기를 만든다. */
+export async function interpolatorFromFiles(files: File[], fallbackCrs: string | null): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
+  if (files.length === 0) throw new Error('수치지형도(.dxf · .shp 묶음 · .zip) 또는 표고점 텍스트(.xyz·.txt·.csv)를 고르세요.');
+  if (files.every((f) => /\.(xyz|txt|csv|pts)$/i.test(f.name))) return interpolatorFromXyz(files, fallbackCrs);
+  if (files.every((f) => /\.dxf$/i.test(f.name))) return interpolatorFromDxf(files, fallbackCrs);
+  if (files.some((f) => /\.dxf$/i.test(f.name))) throw new Error('DXF 와 다른 형식을 섞어 넣을 수 없습니다. 한 가지 형식만 고르세요.');
+  return interpolatorFromShapefiles(files, fallbackCrs);
 }
