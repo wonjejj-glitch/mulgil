@@ -1,4 +1,5 @@
 import { FileUp, LoaderCircle, Mountain, Route } from 'lucide-react';
+import { NgiiLink } from '../ui/DataLinks';
 import { useRef, useState, type ReactNode } from 'react';
 import { fetchOsmRoads } from '../../app/osmRoads';
 import { interpolatorFromFiles, sampleTerrainTiles } from '../../app/terrainFetch';
@@ -267,6 +268,7 @@ function ElevationSection() {
             국토지리정보원 수치지형도를 넣으세요: DXF(등고선·표고점 레이어를 자동으로 고름) 또는 표고점·등고선 Shapefile(.shp+.dbf+.prj 를 함께 또는 .zip). 속성 CONT·NUME·ELEV·표고 또는 Z 좌표에서 표고를 읽고, 반경
             300 m 안 가까운 8개 점을 거리 가중 평균합니다. 측량 성과·CAD 점고도·DEM 을 점으로 내보낸 표고점 텍스트(.xyz·.txt·.csv, 줄마다 X Y Z 또는 번호 X Y Z)도
             넣을 수 있습니다.
+            <NgiiLink />
           </Note>
         </div>
       )}

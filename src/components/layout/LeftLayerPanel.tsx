@@ -1,4 +1,5 @@
 import { Eye, EyeOff } from 'lucide-react';
+import { VworldKeyLink } from '../ui/DataLinks';
 import { useMemo } from 'react';
 import { alignNetworkToRoads, reprojectModel } from '../../app/actions';
 import { unitLabels } from '../../core/model/units';
@@ -180,6 +181,7 @@ export function LeftLayerPanel() {
             {!vworldKey && (
               <p className="mt-1 text-[11px] text-ink-muted">
                 브이월드(vworld.kr) 오픈API 인증키를 입력하면 배경지도가 표시됩니다. 키는 이 브라우저에만 저장됩니다.
+                <VworldKeyLink />
               </p>
             )}
           </div>

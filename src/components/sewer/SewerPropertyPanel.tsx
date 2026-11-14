@@ -1,5 +1,6 @@
 /** 하수 모드 우측 패널: 관망 요약·설계 실행, 선택한 맨홀/관거 속성 편집, 설계값·검토 판정. */
 import { ArrowDownToLine, ClipboardList, FileUp, Gauge, Mountain, Play, RefreshCw, Repeat, SlidersHorizontal, Trash2, TriangleExclamationPoint, Wand2 } from 'lucide-react';
+import { NgiiLink } from '../ui/DataLinks';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { applyDesignToProject, fitOutfallDepth, runSewerDesign, runSewerOptimize } from '../../app/sewerActions';
 import { correctSewerGround, correctSewerGroundFromFiles, deleteSewerSelection, importSewerSurvey, runSewerAsBuiltFromMap, runSewerFromMap } from '../../app/sewerMapActions';
@@ -283,6 +284,7 @@ function CorrectionSection({ disabled, georeferenced }: { disabled: boolean; geo
       <p className="mt-1.5 text-[10px] leading-relaxed text-ink-muted">
         측량 성과 표 머리글 예: 맨홀번호, 지반고, 관저고 (또는 깊이). 측량 관저고로 검토하려면 ‘현황 해석’을 쓰세요 — 자동 설계는 관저고를 다시 계산합니다.
         {!georeferenced && ' 도면 좌표 관망이라 수치지형도 보정은 쓸 수 없습니다.'}
+        <NgiiLink />
       </p>
       <input
         ref={terrainInput}
