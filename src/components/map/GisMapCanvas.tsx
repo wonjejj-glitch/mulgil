@@ -1,4 +1,7 @@
 import type { PickingInfo } from '@deck.gl/core';
+import { useFloodStore } from '../../store/useFloodStore';
+import { buildFloodLayer, floodCanvas } from './floodLayer';
+import { sewerFrame } from '../../core/sewer/mapFrame';
 import { MapboxOverlay, type MapboxOverlayProps } from '@deck.gl/mapbox';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -239,13 +242,27 @@ export function GisMapCanvas() {
         : null,
     [sewerActive, sewerData, sewerDesign, sewerSimulation, sewerSelection, sewerDrawStart, sewerCursor, zoom, deckEpoch],
   );
+  // 침수 해석 결과 (하수 모드, 관망 아래에 깐다)
+  const floodFrame = useFloodStore((s) => s.frame);
+  const floodResult = useFloodStore((s) => s.result);
+  const floodIndex = useFloodStore((s) => s.frameIndex);
+  const floodShow = useFloodStore((s) => s.show);
+  const floodLayer = useMemo(() => {
+    if (deckEpoch < 0 || !sewerActive || !floodShow || !floodFrame || !floodResult) return null;
+    const values = floodIndex < 0 ? floodResult.maxDepth : floodResult.frames[floodIndex];
+    if (!values) return null;
+    const image = floodCanvas(floodFrame, values, floodIndex < 0 ? 1 : 0.01);
+    return buildFloodLayer(floodFrame, sewerFrame(sewerProject), image, `${floodIndex}:${floodResult.steps}`);
+  }, [deckEpoch, sewerActive, floodShow, floodFrame, floodResult, floodIndex, sewerProject]);
   const baseLayers = useMemo(
     () =>
       // deckEpoch: 끊긴 컨텍스트에 묶인 레이어 상태를 버리고 새 오버레이에서 처음부터 초기화하도록 매번 새 인스턴스를 만든다.
       deckEpoch >= 0 && swmmProject && swmmThematic
         ? buildSwmmLayers({ project: swmmProject, thematic: swmmThematic, styleKey: swmmStyleKey, selection: swmmSelection, zoom, hasResults: swmmRun !== null })
         : sewerLayers
-          ? sewerLayers
+          ? floodLayer
+            ? [floodLayer, ...sewerLayers]
+            : sewerLayers
           : buildNetworkLayers({
         junctions,
         sources,
@@ -264,7 +281,7 @@ export function GisMapCanvas() {
       }),
     [
       junctions, sources, linkData, nodes, thematic, results, styleKey, layerVisibility, selection, highlight, multiSelection, profile, zoom, usUnits,
-      swmmProject, swmmThematic, swmmStyleKey, swmmSelection, swmmRun, deckEpoch, sewerLayers,
+      swmmProject, swmmThematic, swmmStyleKey, swmmSelection, swmmRun, deckEpoch, sewerLayers, floodLayer,
     ],
   );
   const deckLayers = useMemo(() => (draftLayers.length > 0 ? [...baseLayers, ...draftLayers] : baseLayers), [baseLayers, draftLayers]);

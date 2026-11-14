@@ -30,8 +30,8 @@ async function loadTile(z: number, x: number, y: number): Promise<Uint8ClampedAr
 }
 
 /** 여러 지점의 지반고(m)를 온라인 지형 타일에서 읽는다. 필요한 타일만, 동시에 6개씩 받는다. */
-export async function sampleTerrainTiles(points: LngLat[], onProgress?: (done: number, total: number) => void): Promise<number[]> {
-  const loc = points.map((p) => lngLatToTilePixel(p, TERRAIN_ZOOM));
+export async function sampleTerrainTiles(points: LngLat[], onProgress?: (done: number, total: number) => void, zoom = TERRAIN_ZOOM): Promise<number[]> {
+  const loc = points.map((p) => lngLatToTilePixel(p, zoom));
   const keys = [...new Set(loc.map((l) => `${l.tx}/${l.ty}`))];
   const tiles = new Map<string, Uint8ClampedArray>();
   let done = 0;
@@ -39,7 +39,7 @@ export async function sampleTerrainTiles(points: LngLat[], onProgress?: (done: n
     await Promise.all(
       keys.slice(i, i + 6).map(async (key) => {
         const [x, y] = key.split('/').map(Number);
-        tiles.set(key, await loadTile(TERRAIN_ZOOM, x, y));
+        tiles.set(key, await loadTile(zoom, x, y));
         onProgress?.(++done, keys.length);
       }),
     );

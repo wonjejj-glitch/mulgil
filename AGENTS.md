@@ -255,6 +255,10 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     - 성과품: `core/sewer/drawings.ts` — `profileStations`, `profileDxf`(세로 10배, 기입란, 관경별 터파기 단면, 한글은 U+XXXX 이스케이프), `planDxf`, `quantityTakeoff`/`quantityCsv`
       (터파기 폭 관경×1.2+0.6 m·맨홀 1~5호 규격은 예시값). 하수 도크 '수량 산출' 탭, 종단도 탭의 DXF 단추.
     - 상수 시간최대계수: `core/engine/peakFactor.ts`(OPTIONS 'Demand Multiplier' 읽기·쓰기, 시나리오 요약) + `app/peakActions.ts`(별도 SimulationManager 로 순차 비교 해석) + 하단 '시간최대계수' 탭.
+  - **2차원 침수 해석 (2026-11-14)**: `core/flood/solver.ts`(국부 관성 LISFLOOD-FP 방식, 활성 범위만 계산, 가장자리 자유 유출, 물수지 테스트),
+    `prepare.ts`(격자 범위·셀 상한 30만, SWMM 출력 Flooding → 유입원, `.asc` 내보내기, 맨홀 기준 DEM 보정량), `flood.worker.ts`, `app/floodActions.ts`(DEM = 지형 타일 z15 또는
+    `interpolatorFromFiles`, 하수 run 이 바뀌면 결과 삭제), `store/useFloodStore.ts`, `components/map/floodLayer.ts`(BitmapLayer, 하수 레이어 아래), 하수 도크 '침수 해석' 탭(`FloodPanel`).
+    한 방향(1D→2D) — 지표 물의 관 재유입·직접 강우 유출·건물 장애물은 없음.
   - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.

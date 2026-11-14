@@ -10,11 +10,13 @@ import { useSewerStore } from '../../store/useSewerStore';
 import { useUIStore, type SewerBottomTab } from '../../store/useUIStore';
 import { Button } from '../ui/fields';
 import { SewerProfile, SewerReviewList, SewerSimulationSummary } from './SewerShared';
+import { FloodPanel } from './FloodPanel';
 
 const TABS: { id: SewerBottomTab; label: string }[] = [
   { id: 'profile', label: '종단도' },
   { id: 'review', label: '검토 목록' },
   { id: 'simulation', label: 'SWMM 해석 요약' },
+  { id: 'flood', label: '침수 해석' },
   { id: 'quantity', label: '수량 산출' },
 ];
 
@@ -213,6 +215,8 @@ export function SewerDock() {
                 emptyMessage="‘설계·해석 실행’(F5) 또는 우측 패널의 ‘자동 설계’를 누르면 관로별 검토 목록이 표시됩니다. 동수위 판정은 SWMM 해석 뒤에 나옵니다."
               />
             </div>
+          ) : tab === 'flood' ? (
+            <FloodPanel />
           ) : tab === 'quantity' ? (
             <QuantityTab />
           ) : !simulation ? (
