@@ -1,3 +1,4 @@
+import { PlatformBar } from './components/platform/PlatformBar';
 import { FolderOpen, History, Spline, Upload, Users } from 'lucide-react';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { deleteSelection, exportInp, fitToNetwork, importFiles, loadSample, runSimulation, selectAll } from './app/actions';
@@ -337,6 +338,8 @@ export function App() {
   const sewer = useUIStore((s) => s.domain === 'sewer');
   return (
     <div className="flex h-full flex-col bg-canvas text-ink">
+      {/* 물마루 공통 상단바(40px) — 아래 작업 화면은 남은 높이(100% − 40px)를 flex 로 나눠 쓴다 */}
+      <PlatformBar current="mulgil" />
       <TopToolbar />
       <div className="flex min-h-0 flex-1">
         <LeftLayerPanel />

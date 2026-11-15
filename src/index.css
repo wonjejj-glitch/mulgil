@@ -97,3 +97,101 @@ input[type='range'] {
 .toast-enter {
   animation: toast-in 0.18s ease-out;
 }
+
+/* ---------------------------------------------------------------- 물마루 플랫폼 공통 상단바 (B안 · 도화 그린) */
+.mulmaru-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 14px;
+  height: 40px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0 16px;
+  overflow: hidden;
+  background: #0f3d2c;
+  border-bottom: 1px solid #082a1e;
+  color: #ecf6f0;
+  font-family: 'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif;
+  white-space: nowrap;
+}
+.mulmaru-bar a {
+  text-decoration: none;
+}
+.mulmaru-bar a:focus-visible {
+  outline: 2px solid #5cc98d;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+.mulmaru-brand {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 7px;
+  color: #ecf6f0;
+  font-size: 15px;
+  font-weight: 800;
+}
+.mulmaru-divider {
+  flex-shrink: 0;
+  width: 1px;
+  height: 18px;
+  background: rgba(156, 196, 173, 0.35);
+}
+.mulmaru-menu {
+  display: flex;
+  align-items: stretch;
+  gap: 16px;
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mulmaru-menu li {
+  display: flex;
+}
+.mulmaru-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  box-sizing: border-box;
+  border-bottom: 2px solid transparent;
+  color: #9cc4ad;
+  font-size: 13px;
+}
+.mulmaru-item:hover {
+  color: #ecf6f0;
+}
+.mulmaru-item[aria-current='page'] {
+  color: #ecf6f0;
+  font-weight: 700;
+  border-bottom-color: #5cc98d;
+}
+.mulmaru-desc {
+  color: #9cc4ad;
+  font-size: 12px;
+  font-weight: 400;
+}
+.mulmaru-portal {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: #9cc4ad;
+  font-size: 12px;
+}
+.mulmaru-portal:hover {
+  color: #ecf6f0;
+}
+@media (max-width: 719.98px) {
+  .mulmaru-desc,
+  .mulmaru-portal {
+    display: none;
+  }
+}
+@media print {
+  .mulmaru-bar {
+    display: none;
+  }
+}
