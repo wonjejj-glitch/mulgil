@@ -1,12 +1,12 @@
 /**
- * '물마루' 플랫폼 공통 상단바 (물길·물담·물꼬 공통 규격). 높이 40px, 기존 툴바 위에 놓인다.
+ * '물마루' 플랫폼 공통 상단바 (물담·물길·물꼬 공통 규격 — 물의 흐름: 수원 → 공급 → 배출·정비, 포털과 같은 순서). 높이 40px, 기존 툴바 위에 놓인다.
  * 스타일은 src/index.css 의 .mulmaru-* 클래스(규격 색·글꼴·좁은 화면·인쇄 숨김).
  */
 const PORTAL = 'https://wonjejj-glitch.github.io/mulmaru/';
 
 const APPS = [
-  { id: 'mulgil', name: '물길', desc: '관망해석', href: 'https://wonjejj-glitch.github.io/mulgil/' },
   { id: 'garam', name: '물담', desc: '댐 용수공급', href: 'https://wonjejj-glitch.github.io/garam/' },
+  { id: 'mulgil', name: '물길', desc: '관망해석', href: 'https://wonjejj-glitch.github.io/mulgil/' },
   { id: 'mulkko', name: '물꼬', desc: '하수관로 정비', href: 'https://wonjejj-glitch.github.io/mulkko/' },
 ] as const;
 
