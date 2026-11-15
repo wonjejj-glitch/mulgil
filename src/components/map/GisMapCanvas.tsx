@@ -1,3 +1,4 @@
+import { setViewBounds, setViewReader } from '../../app/mapView';
 import type { PickingInfo } from '@deck.gl/core';
 import { useFloodStore } from '../../store/useFloodStore';
 import { buildFloodLayer, floodCanvas } from './floodLayer';
@@ -736,6 +737,15 @@ export function GisMapCanvas() {
     if (import.meta.env.DEV && mapRef.current) Object.assign(window, { __ogpMap: mapRef.current.getMap() });
   });
 
+  // 지도 화면 범위를 다른 기능(지도 건물로 수용가 만들기 등)이 읽을 수 있게 한다
+  useEffect(() => {
+    setViewReader(() => {
+      const b = mapRef.current?.getMap().getBounds();
+      return b ? [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()] : null;
+    });
+    return () => setViewReader(null);
+  }, []);
+
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !camera) return;
@@ -853,7 +863,15 @@ export function GisMapCanvas() {
         maxPitch={70}
         doubleClickZoom={!LINK_TOOLS.has(tool) && tool !== 'area'}
         attributionControl={{ compact: true }}
-        onLoad={() => setMapReady(true)}
+        onLoad={(event) => {
+          setMapReady(true);
+          const b = event.target.getBounds();
+          setViewBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+        }}
+        onMoveEnd={(event) => {
+          const b = event.target.getBounds();
+          setViewBounds([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+        }}
         onZoom={(event) => setZoom(Math.round(event.viewState.zoom * 2) / 2)}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}

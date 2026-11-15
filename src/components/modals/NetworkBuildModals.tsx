@@ -1,7 +1,7 @@
 /**
  * 대화상자 3종: 수용가 CSV → 관망 초안 / 용도지역 분담유량 / 관망 정리 도구.
  */
-import { Crosshair, Download, FileUp, GitMerge, Hash, LoaderCircle, MapPinned, Send, Spline, TriangleExclamationPoint, Wand2 } from 'lucide-react';
+import { Crosshair, Download, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, TriangleExclamationPoint, Wand2 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
   addFillToNetwork,
@@ -21,6 +21,7 @@ import {
   runRenumber,
   sendSewerDraft,
   setUseKey,
+  loadCustomersFromMap,
 } from '../../app/draftActions';
 import type { ColumnMapping, DemandUnit } from '../../core/io/customerCsv';
 import { formatLngLat, type ImportCrsChoice } from '../../utils/geoMath';
@@ -101,6 +102,10 @@ function DraftDialog() {
             <FileUp size={13} />
             CSV 파일 열기
           </Button>
+          <Button disabled={s.busy !== null} onClick={() => void loadCustomersFromMap()} title="수용가 자료가 없을 때: 지금 지도 화면 안의 OpenStreetMap 건물로 개략 수용가를 만듭니다">
+            <MapIcon size={13} />
+            지도 화면의 건물로 만들기 (개략)
+          </Button>
           <input
             ref={fileInput}
             type="file"
@@ -118,6 +123,7 @@ function DraftDialog() {
             </span>
           )}
         </div>
+        <Note>수용가 자료가 없으면 관망을 만들 지역으로 지도를 옮긴 뒤 ‘지도 화면의 건물로 만들기’를 누르세요 — 건물 면적·층수·용도로 세대수를 개략 추정해 수용가로 씁니다(참고용).</Note>
         <Note>요금·급수 대장에서 내려받은 표를 그대로 넣으세요. 열: 수용가 번호, X(경도)·Y(위도) 또는 평면 좌표, 사용량. 엑셀은 ‘CSV(쉼표로 분리)’로 저장합니다. 주소만 있는 자료는 먼저 좌표로 바꿔야 합니다.</Note>
         {s.table && s.mapping && (
           <div className="mt-2 flex flex-wrap items-end gap-2">
@@ -151,6 +157,10 @@ function DraftDialog() {
             {s.skipped.length > 0 && ` · 좌표·사용량을 못 읽은 줄 ${s.skipped.length}개 (${s.skipped.slice(0, 6).join(', ')}${s.skipped.length > 6 ? ' …' : ''})`}
           </p>
         )}
+        {s.customers.length > 0 && !s.table && s.busy === null && (
+          <Note tone="warn">지도 건물로 만든 개략 수용가입니다(층수·용도가 없는 건물은 기본값). 관망 초안의 관경·유량은 참고용으로만 보세요.</Note>
+        )}
+        {s.busy === '지도 건물 읽는 중…' && <p className="mt-2 text-[11px] text-ink-soft">지도 건물 읽는 중…</p>}
       </section>
 
       <section className="mt-4 border-t border-line pt-3">
