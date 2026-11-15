@@ -297,6 +297,14 @@ export function TopToolbar() {
                   sewerGisInput.current?.click();
                 }}
               />
+              <MenuItem
+                icon={Users}
+                label="수용가·건물·연결관으로 오수 유입량 넣기"
+                onClick={() => {
+                  close();
+                  useUIStore.getState().openModal('sewage');
+                }}
+              />
               <div className="my-1 border-t border-line" />
               <MenuItem
                 icon={Save}
@@ -446,6 +454,7 @@ export function TopToolbar() {
                   {item(SlidersHorizontal, '설계 조건 · 일괄 표 편집 (유역·강우 포함)', () => openModal('sewer'))}
                   {item(FileInput, 'SWMM .inp → 편집 가능한 하수 관망으로 가져오기', () => swmmImportInput.current?.click())}
                   {item(FileInput, '하수도 GIS(SHP)에서 관망 만들기', () => sewerGisInput.current?.click())}
+                  {item(Users, '수용가·건물·연결관으로 오수 유입량 넣기', () => openModal('sewage'))}
                   {item(Mountain, '지반고 보정 — 지형 타일 (매설 깊이 유지)', () => void correctSewerGround(true))}
                   {item(Mountain, '지반고 보정 — 지형 타일 (지반고만)', () => void correctSewerGround(false))}
                   {item(RefreshCw, '설계 결과를 관망에 반영', applyDesignToProject)}

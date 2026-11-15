@@ -187,7 +187,7 @@ export async function createSewerFromGis(options: ExtractOptions, choice: Terrai
       message:
         `좌표계 ${data.crsLabel} → EPSG:5186. 아래 ‘자료 점검’ 탭에 확인·보완할 곳 ${notes.length.toLocaleString()}건을 모았습니다` +
         (terrainLabel ? ` (지형과 지반고 차이 ${diffs}곳${audit.replace ? ` 중 ${replaced}곳을 지형값으로 바꿈` : ''})` : '') +
-        '. 유입량이 없으니 유역을 그리거나(A) 맨홀 유입량을 넣고 ‘현황 해석’을 하세요.',
+        '. 유입량은 아직 없습니다 — 파일 → ‘수용가·건물·연결관으로 오수 유입량 넣기’(하수연결관 SHP 만으로도 됨) 또는 유역 그리기(A) 뒤 ‘현황 해석’을 하세요.',
     });
     return true;
   } catch (error) {

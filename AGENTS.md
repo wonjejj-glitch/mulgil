@@ -270,6 +270,10 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     하류 관이 둘인 맨홀에서 관저고가 거꾸로(시점 < 종점 − 2 cm)인 관은 방향을 뒤집는다(관 목록 복사본에서). 결과는 `useSewerGisStore.audit` → 하수 도크 '자료 점검' 탭(`GisAuditPanel`, CSV).
     `interpolatorFromFiles(files, fallbackCrs, preferTm)` — .prj 없는 TM 좌표는 함께 쓰는 자료의 원점(5185~5188)으로 본다.
     실제 자료(시 전체 관거 4.8만·맨홀 4.4만)는 저장소에 넣지 않는다 — 테스트는 가짜 자료(`fromGis.test.ts`).
+  - **수용가·건물·연결관 → 맨홀 오수량 (2026-11-15)**: `core/sewer/sewage.ts`(`assignSewage`: 연결관 집 쪽 끝 → 본관 쪽 끝의 맨홀(3 m)/관거(15 m) 상류 맨홀,
+    없으면 가장 가까운 관거 상류 맨홀; 오수량 = 사용량×전환율 | 세대×인원×원단위 | 기본 세대; 해석 유량 = 일평균×첨두 배율; `sourcesFromConnections` 는 관망에 닿는 연결관만),
+    `app/sewageImport.ts`(CSV = customerCsv 의 parseCsv·guessMapping + 세대수 열, SHP 선=연결관(SBA003 우수 제외)·점/면=건물, TM 원점은 하수 GIS 원점 우선),
+    `components/modals/SewageModal.tsx`(모달 'sewage', 적용 = 모든 JUNCTION base_flow 교체, 맨홀별 CSV).
   - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.
