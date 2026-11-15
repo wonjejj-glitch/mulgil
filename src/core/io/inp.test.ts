@@ -45,10 +45,11 @@ describe('parseInp', () => {
     expect(model.crs).toEqual({ kind: 'epsg', code: 'EPSG:5186' });
     expect(crsLabel).toContain('5186');
     for (const node of nodes) {
-      expect(node.position[0]).toBeGreaterThan(127.3);
-      expect(node.position[0]).toBeLessThan(127.5);
-      expect(node.position[1]).toBeGreaterThan(36.3);
-      expect(node.position[1]).toBeLessThan(36.4);
+      // 샘플은 김해 부근 (가상 관망)
+      expect(node.position[0]).toBeGreaterThan(128.8);
+      expect(node.position[0]).toBeLessThan(128.95);
+      expect(node.position[1]).toBeGreaterThan(35.2);
+      expect(node.position[1]).toBeLessThan(35.3);
     }
   });
 
@@ -135,7 +136,7 @@ describe('writeInp', () => {
     for (const id in model.nodes) model.nodes[id].position = toWgs84(model.crs, fromWgs84({ ...model.crs, shift: undefined }, model.nodes[id].position));
     expect(distanceMeters(before, model.nodes.J1.position)).toBeCloseTo(263, 0);
     const out = writeInp(model);
-    expect(out).toMatch(/J1\s+233994\.033\s+417003\.109/); // 원본 [COORDINATES] 값
+    expect(out).toMatch(/J1\s+369794\.033\s+295103\.109/); // 원본 [COORDINATES] 값
     const again = parseInp(out).model;
     expect(distanceMeters(again.nodes.J1.position, before)).toBeLessThan(0.01);
   });

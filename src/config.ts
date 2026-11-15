@@ -5,7 +5,7 @@ export const APP_SUBTITLE = '상수·우수·하수 관망해석 워크스페이
 export const MAX_UNDO_STEPS = 100;
 
 /** 새 프로젝트의 초기 지도 위치 (서울시청 부근). */
-export const INITIAL_VIEW = { longitude: 126.978, latitude: 37.5665, zoom: 13 };
+export const INITIAL_VIEW = { longitude: 128.8665, latitude: 35.2385, zoom: 13 };
 
 export const SAMPLES = [
   { file: 'sample-district.inp', label: '가상 배수구역 (정상)' },

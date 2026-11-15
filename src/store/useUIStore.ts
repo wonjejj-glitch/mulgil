@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import type { LinkType, LngLat } from '../core/model/types';
 import type { BBox, ImportCrsChoice } from '../utils/geoMath';
 
+/** 배포 때 넣은 브이월드 키 (GitHub 저장소 Secrets 의 VITE_VWORLD_KEY). 사용자가 왼쪽 패널에 넣은 키가 있으면 그것이 먼저다. */
+const BUILT_IN_VWORLD_KEY: string = (import.meta.env.VITE_VWORLD_KEY as string | undefined) ?? '';
+
 export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve' | 'manhole' | 'outfall' | 'conduit' | 'catchment';
 /** 작업 영역: 상수(EPANET 관망) / 하수(useSewerStore 의 하수 프로젝트). */
 export type Domain = 'water' | 'sewer';
@@ -77,14 +80,14 @@ interface PersistedUI {
 }
 
 function loadPersisted(): PersistedUI {
-  const fallback: PersistedUI = { basemap: 'osm', vworldKey: '', basemapDim: 1, basemapGray: false };
+  const fallback: PersistedUI = { basemap: 'osm', vworldKey: BUILT_IN_VWORLD_KEY, basemapDim: 1, basemapGray: false };
   try {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw) as Partial<PersistedUI>;
     return {
       basemap: parsed.basemap ?? fallback.basemap,
-      vworldKey: typeof parsed.vworldKey === 'string' ? parsed.vworldKey : '',
+      vworldKey: typeof parsed.vworldKey === 'string' && parsed.vworldKey ? parsed.vworldKey : BUILT_IN_VWORLD_KEY,
       basemapDim: typeof parsed.basemapDim === 'number' ? parsed.basemapDim : 1,
       basemapGray: parsed.basemapGray === true,
     };

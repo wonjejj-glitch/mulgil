@@ -19,8 +19,8 @@ describe('readSwmmInp', () => {
     expect(project.nodes.map((n) => `${n.id}:${n.kind}`)).toEqual(['J1:junction', 'J2:junction', 'J3:junction', 'J4:junction', 'J5:junction', 'J6:junction', 'O1:outfall']);
     expect(project.nodes[0]).toMatchObject({ invert: 30, maxDepth: 2 });
     for (const n of project.nodes) {
-      expect(n.position[0]).toBeGreaterThan(127.3);
-      expect(n.position[1]).toBeGreaterThan(36.3);
+      expect(n.position[0]).toBeGreaterThan(128.8);
+      expect(n.position[1]).toBeGreaterThan(35.2);
     }
     expect(project.links).toHaveLength(6);
     expect(project.links.find((l) => l.id === 'C5')).toMatchObject({ from: 'J4', to: 'J6', shape: 'CIRCULAR', geom1: 0.6, length: 90 });

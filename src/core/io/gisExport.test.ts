@@ -29,7 +29,7 @@ describe('GIS export', () => {
     // 좌표는 EPSG:5186 미터 (중부원점 범위)
     const [x, y] = (j1.geometry as { coordinates: number[] }).coordinates;
     expect(x).toBeGreaterThan(100000);
-    expect(y).toBeGreaterThan(300000);
+    expect(y).toBeGreaterThan(200000);
   });
 
   it('writes a DXF with layers, polylines and labels', () => {

@@ -50,7 +50,7 @@ for (const code in CRS_DEFS) proj4.defs(code, CRS_DEFS[code].def);
 
 export type ImportCrsChoice = 'auto' | 'wgs84' | 'local' | keyof typeof CRS_DEFS;
 
-export const DEFAULT_ANCHOR: LngLat = [126.978, 37.5665];
+export const DEFAULT_ANCHOR: LngLat = [128.8665, 35.2385];
 
 const M_PER_DEG_LAT = 110540;
 const M_PER_DEG_LNG_EQ = 111320;

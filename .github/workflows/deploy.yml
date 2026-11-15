@@ -59,6 +59,9 @@ jobs:
       - name: Build
         run: npm run build
         env:
+          # 브이월드 배경지도 키 (저장소 Settings → Secrets → Actions 의 VITE_VWORLD_KEY). 없으면 빈 값 — 사용자가 앱에서 넣는다.
+          VITE_VWORLD_KEY: ${{ secrets.VITE_VWORLD_KEY }}
+        env:
           BASE_PATH: /${{ github.event.repository.name }}/
       - uses: actions/upload-pages-artifact@v3
         with:
