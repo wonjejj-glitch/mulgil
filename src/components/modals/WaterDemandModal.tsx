@@ -67,12 +67,13 @@ export function WaterDemandModal() {
 
   const loadMap = () =>
     run(async () => {
-      const est = estimateBuildings(await fetchOsmBuildings(junctions.map((j) => j.position)));
+      const { buildings, partsUsed } = await fetchOsmBuildings(junctions.map((j) => j.position));
+      const est = estimateBuildings(buildings);
       if (est.items.length === 0) throw new Error('이 범위의 지도(OpenStreetMap)에 건물이 없습니다.');
       const c = est.byCategory;
       const fmt = (k: keyof typeof c) => `${k} ${c[k].count.toLocaleString()}동 ≈ ${Math.round(c[k].households).toLocaleString()}세대`;
       setSources(est.items.map((b) => ({ id: b.id, position: b.position, households: b.households })));
-      setLabels([`지도(OpenStreetMap) 건물 ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산)`]);
+      setLabels([`지도(OpenStreetMap) 건물 ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산) · 층수 자료 있는 건물 ${est.floorsKnown.toLocaleString()}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}), 나머지는 기본 층수`]);
       setFromMap(true);
     });
 

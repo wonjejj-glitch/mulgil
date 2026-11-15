@@ -55,7 +55,7 @@ export function SewageModal() {
     setBusy(true);
     setError(null);
     try {
-      const buildings = await fetchOsmBuildings([...nodePositions(project).values()]);
+      const { buildings, partsUsed } = await fetchOsmBuildings([...nodePositions(project).values()]);
       const est = estimateBuildings(buildings);
       if (est.items.length === 0) throw new Error('이 범위의 지도(OpenStreetMap)에 건물이 없습니다. 지도 자료가 비어 있는 지역일 수 있습니다.');
       const c = est.byCategory;
@@ -66,7 +66,7 @@ export function SewageModal() {
         stormConnections: prev?.stormConnections ?? 0,
         labels: [
           ...(prev?.connections.length ? prev.labels.filter((l) => l.includes('연결관')) : []),
-          `지도(OpenStreetMap) 건물 ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산)`,
+          `지도(OpenStreetMap) 건물 ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산) · 층수 자료 있는 건물 ${est.floorsKnown.toLocaleString()}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}), 나머지는 기본 층수`,
         ],
         warnings: ['지도 건물로 세대수를 추정했습니다(개략·참고용). 아파트 층수·용도 정보가 없는 건물은 기본값으로 계산해 실제와 크게 다를 수 있습니다.', ...(prev?.warnings ?? [])],
       }));

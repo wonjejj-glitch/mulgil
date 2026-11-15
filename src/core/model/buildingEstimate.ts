@@ -7,7 +7,8 @@
  *  - 용도 미상(building=yes): 200 m² 미만이면 1세대, 크면 연면적 ÷ 세대당 연면적
  *  - 상업·업무·공공 등: 연면적 ÷ 비주거 환산 면적 = 세대 환산값 (영업용 사용량을 세대로 근사)
  *  - 창고·차고·지붕만 있는 구조물 등은 뺀다
- * 층수(building:levels)가 없으면 종류별 기본 층수를 쓴다.
+ * 층수: building:levels → 높이(height ÷ 3 m) → 건물 안 부분(building:part)의 최고 층수(호출 쪽에서 levels 로 넣음) → 종류별 기본값.
+ * 용도 태그가 없어도 이름에 '아파트'가 있으면 공동주택, '빌라·연립·다세대·맨션'이면 저층 공동주택으로 본다.
  */
 import type { LngLat } from './types';
 
@@ -20,14 +21,17 @@ export interface BuildingEstimateOptions {
   apartmentFloors: number;
   /** 층수 정보가 없는 그 밖의 건물 층수 */
   otherFloors: number;
+  /** 층수 정보가 없는 빌라·연립·다세대(residential) 층수 */
+  lowRiseFloors: number;
 }
 
-export const DEFAULT_BUILDING_ESTIMATE: BuildingEstimateOptions = { areaPerHousehold: 100, nonResidentialArea: 300, apartmentFloors: 12, otherFloors: 2 };
+export const DEFAULT_BUILDING_ESTIMATE: BuildingEstimateOptions = { areaPerHousehold: 100, nonResidentialArea: 300, apartmentFloors: 12, otherFloors: 2, lowRiseFloors: 4 };
 
 export type BuildingCategory = '공동주택' | '단독주택' | '용도 미상' | '비주거';
 
 const SKIP = /^(garage|garages|shed|roof|carport|parking|construction|ruins|greenhouse|hut|kiosk|bunker|tent|container|toilets|transformer_tower|water_tower|silo|storage_tank|no)$/;
-const APARTMENT = /^(apartments|residential|dormitory)$/;
+const APARTMENT = /^(apartments|dormitory)$/;
+const LOW_RISE = /^(residential)$/;
 const HOUSE = /^(house|detached|semidetached_house|bungalow|farm|cabin|static_caravan)$/;
 const TERRACE = /^(terrace|townhouse)$/;
 const NON_RES = /^(commercial|retail|office|industrial|warehouse|school|university|college|kindergarten|church|temple|mosque|public|civic|government|hospital|clinic|hotel|train_station|transportation|sports_hall|supermarket|manufacture|service|fire_station|police)$/;
@@ -52,30 +56,88 @@ export function ringCenter(ring: LngLat[]): LngLat {
   return [x / n, y / n];
 }
 
-/** 건물 하나의 세대수(비주거는 세대 환산값). 빼야 하는 건물이면 null. */
-export function estimateHouseholds(area: number, tags: Record<string, string>, options: BuildingEstimateOptions = DEFAULT_BUILDING_ESTIMATE): { households: number; category: BuildingCategory; floors: number } | null {
-  const type = (tags.building ?? 'yes').toLowerCase();
+/** 태그에서 층수: building:levels → height·building:height(m) ÷ 3. 모르면 null. */
+export function floorsFromTags(tags: Record<string, string>): number | null {
+  const levels = parseFloat(tags['building:levels'] ?? '');
+  if (Number.isFinite(levels) && levels > 0) return Math.min(Math.round(levels), 80);
+  const h = parseFloat((tags.height ?? tags['building:height'] ?? '').replace(/m$/i, ''));
+  if (Number.isFinite(h) && h >= 2.5) return Math.min(Math.max(1, Math.round(h / 3)), 80);
+  return null;
+}
+
+/** 건물 하나의 세대수(비주거는 세대 환산값). 빼야 하는 건물이면 null. floorsKnown: 층수를 자료에서 찾았는지. */
+export function estimateHouseholds(area: number, tags: Record<string, string>, options: BuildingEstimateOptions = DEFAULT_BUILDING_ESTIMATE): { households: number; category: BuildingCategory; floors: number; floorsKnown: boolean } | null {
+  let type = (tags.building ?? 'yes').toLowerCase();
   if (SKIP.test(type) || area < 15) return null;
-  const levels = Number(tags['building:levels']);
-  const known = Number.isFinite(levels) && levels > 0 ? Math.min(levels, 80) : null;
+  const name = `${tags.name ?? ''} ${tags['name:ko'] ?? ''}`;
+  if (type === 'yes' || type === 'residential') {
+    if (/아파트|APT/i.test(name)) type = 'apartments';
+    else if (type === 'yes' && /빌라|연립|다세대|맨션|하이츠|빌리지/.test(name)) type = 'residential';
+  }
+  const known = floorsFromTags(tags);
+  const floorsKnown = known !== null;
   if (APARTMENT.test(type)) {
     const floors = known ?? options.apartmentFloors;
-    return { households: Math.max(1, (area * floors * 0.8) / options.areaPerHousehold), category: '공동주택', floors };
+    return { households: Math.max(1, (area * floors * 0.8) / options.areaPerHousehold), category: '공동주택', floors, floorsKnown };
   }
-  if (HOUSE.test(type)) return { households: 1, category: '단독주택', floors: known ?? 1 };
-  if (TERRACE.test(type)) return { households: Math.max(1, area / 60), category: '단독주택', floors: known ?? 2 };
+  if (LOW_RISE.test(type)) {
+    const floors = known ?? options.lowRiseFloors;
+    return { households: Math.max(1, (area * floors * 0.8) / options.areaPerHousehold), category: '공동주택', floors, floorsKnown };
+  }
+  if (HOUSE.test(type)) return { households: 1, category: '단독주택', floors: known ?? 1, floorsKnown };
+  if (TERRACE.test(type)) return { households: Math.max(1, area / 60), category: '단독주택', floors: known ?? 2, floorsKnown };
   if (NON_RES.test(type)) {
     const floors = known ?? options.otherFloors;
-    return { households: (area * floors) / options.nonResidentialArea, category: '비주거', floors };
+    return { households: (area * floors) / options.nonResidentialArea, category: '비주거', floors, floorsKnown };
   }
   const floors = known ?? options.otherFloors;
-  return { households: area < 200 ? 1 : (area * floors) / options.areaPerHousehold, category: '용도 미상', floors };
+  return { households: area < 200 && !floorsKnown ? 1 : Math.max(1, (area * floors) / options.areaPerHousehold), category: '용도 미상', floors, floorsKnown };
 }
 
 export interface MapBuilding {
   id: string;
   ring: LngLat[];
   tags: Record<string, string>;
+}
+
+/** 경위도 점이 고리 안에 있는지 (짝홀). */
+function insideRing(p: LngLat, ring: LngLat[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * 층수 태그가 없는 건물에 그 안의 건물 부분(building:part)의 최고 층수·높이를 넣는다 (OSM 에서 고층 동은 부분으로 나눠 그리는 경우가 많다).
+ * 바꾼 건물 수를 돌려준다. buildings 를 고친다.
+ */
+export function floorsFromParts(buildings: MapBuilding[], parts: MapBuilding[]): number {
+  if (parts.length === 0) return 0;
+  const withFloors = parts.flatMap((p) => {
+    const f = floorsFromTags(p.tags);
+    return f ? [{ c: ringCenter(p.ring), f }] : [];
+  });
+  let changed = 0;
+  for (const b of buildings) {
+    if (floorsFromTags(b.tags) !== null) continue;
+    let lng0 = Infinity, lng1 = -Infinity, lat0 = Infinity, lat1 = -Infinity;
+    for (const [x, y] of b.ring) {
+      lng0 = Math.min(lng0, x);
+      lng1 = Math.max(lng1, x);
+      lat0 = Math.min(lat0, y);
+      lat1 = Math.max(lat1, y);
+    }
+    let best = 0;
+    for (const p of withFloors) if (p.c[0] >= lng0 && p.c[0] <= lng1 && p.c[1] >= lat0 && p.c[1] <= lat1 && insideRing(p.c, b.ring)) best = Math.max(best, p.f);
+    if (best > 0) {
+      b.tags = { ...b.tags, 'building:levels': String(best) };
+      changed++;
+    }
+  }
+  return changed;
 }
 
 export interface EstimatedBuilding {
@@ -85,7 +147,10 @@ export interface EstimatedBuilding {
   category: BuildingCategory;
 }
 
-export function estimateBuildings(buildings: MapBuilding[], options: BuildingEstimateOptions = DEFAULT_BUILDING_ESTIMATE): { items: EstimatedBuilding[]; skipped: number; byCategory: Record<BuildingCategory, { count: number; households: number }> } {
+export function estimateBuildings(
+  buildings: MapBuilding[],
+  options: BuildingEstimateOptions = DEFAULT_BUILDING_ESTIMATE,
+): { items: EstimatedBuilding[]; skipped: number; floorsKnown: number; byCategory: Record<BuildingCategory, { count: number; households: number }> } {
   const byCategory: Record<BuildingCategory, { count: number; households: number }> = {
     공동주택: { count: 0, households: 0 },
     단독주택: { count: 0, households: 0 },
@@ -93,18 +158,19 @@ export function estimateBuildings(buildings: MapBuilding[], options: BuildingEst
     비주거: { count: 0, households: 0 },
   };
   const items: EstimatedBuilding[] = [];
-  let skipped = 0;
+  let skipped = 0, floorsKnown = 0;
   for (const b of buildings) {
     const est = estimateHouseholds(ringArea(b.ring), b.tags, options);
     if (!est) {
       skipped++;
       continue;
     }
+    if (est.floorsKnown) floorsKnown++;
     items.push({ id: b.id, position: ringCenter(b.ring), households: est.households, category: est.category });
     byCategory[est.category].count++;
     byCategory[est.category].households += est.households;
   }
-  return { items, skipped, byCategory };
+  return { items, skipped, floorsKnown, byCategory };
 }
 
 /* ------------------------------------------------------------------ 상수: 수용가 → 절점 수요량 */
