@@ -33,6 +33,7 @@ const SewerDesignModal = lazy(() => import('./components/modals/SewerDesignModal
 const CustomerDraftModal = lazy(() => import('./components/modals/NetworkBuildModals').then((m) => ({ default: m.CustomerDraftModal })));
 const AllocationModal = lazy(() => import('./components/modals/NetworkBuildModals').then((m) => ({ default: m.AllocationModal })));
 const NetworkToolsModal = lazy(() => import('./components/modals/NetworkBuildModals').then((m) => ({ default: m.NetworkToolsModal })));
+const SewerGisModal = lazy(() => import('./components/modals/SewerGisModal').then((m) => ({ default: m.SewerGisModal })));
 
 function ModalHost() {
   const modal = useUIStore((s) => s.modal);
@@ -48,6 +49,7 @@ function ModalHost() {
       {modal === 'draft' && <CustomerDraftModal />}
       {modal === 'allocate' && <AllocationModal />}
       {modal === 'tools' && <NetworkToolsModal />}
+      {modal === 'sewerGis' && <SewerGisModal />}
     </Suspense>
   );
 }

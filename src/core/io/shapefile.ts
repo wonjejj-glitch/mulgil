@@ -1,6 +1,6 @@
 /**
  * ESRI Shapefile 읽기 (.shp 도형 + .dbf 속성 + .prj 좌표계 + .cpg 인코딩).
- * 점·다중점·선(PolyLine) 계열과 Z/M 변형을 GeoJSON 으로 바꾼다. 면(Polygon)은 관망 요소가 아니므로 건너뛴다.
+ * 점·다중점·선(PolyLine) 계열과 Z/M 변형을 GeoJSON 으로 바꾼다. 면(Polygon)은 관망 요소가 아니므로 건너뛰고, polygons 옵션을 주면(하수 처리분구 등 구역) 읽는다.
  * 국내 자료는 속성이 CP949(EUC-KR)인 경우가 많아 .cpg 가 없으면 UTF-8 → EUC-KR 순으로 시도한다.
  */
 import type { Feature, FeatureCollection, Geometry, Position } from 'geojson';
@@ -27,8 +27,25 @@ const SHAPE_NAMES: Record<number, string> = {
 
 /* ------------------------------------------------------------------ .shp */
 
-function readGeometry(view: DataView, offset: number, length: number): { geometry: Geometry | null; type: number } {
+function readGeometry(view: DataView, offset: number, length: number, polygons = false): { geometry: Geometry | null; type: number } {
   const type = view.getInt32(offset, true);
+  if (polygons && (type === 5 || type === 15 || type === 25)) {
+    // 면: 모든 고리를 한 Polygon 의 고리로 둔다 (안팎은 짝홀 규칙으로 판정)
+    const numParts = view.getInt32(offset + 36, true);
+    const numPoints = view.getInt32(offset + 40, true);
+    const partsAt = offset + 44;
+    const pointsAt = partsAt + numParts * 4;
+    const starts: number[] = [];
+    for (let p = 0; p < numParts; p++) starts.push(view.getInt32(partsAt + p * 4, true));
+    starts.push(numPoints);
+    const rings: Position[][] = [];
+    for (let p = 0; p < numParts; p++) {
+      const ring: Position[] = [];
+      for (let i = starts[p]; i < starts[p + 1]; i++) ring.push([view.getFloat64(pointsAt + i * 16, true), view.getFloat64(pointsAt + i * 16 + 8, true)]);
+      if (ring.length >= 3) rings.push(ring);
+    }
+    return { geometry: rings.length > 0 ? { type: 'Polygon', coordinates: rings } : null, type };
+  }
   const end = offset + length;
   const hasZ = type === 11 || type === 13 || type === 18;
   switch (type) {
@@ -84,7 +101,7 @@ function readGeometry(view: DataView, offset: number, length: number): { geometr
   }
 }
 
-export function parseShp(buffer: ArrayBuffer): { geometries: (Geometry | null)[]; skippedTypes: Map<string, number> } {
+export function parseShp(buffer: ArrayBuffer, polygons = false): { geometries: (Geometry | null)[]; skippedTypes: Map<string, number> } {
   const view = new DataView(buffer);
   if (buffer.byteLength < 100 || view.getInt32(0, false) !== 9994) throw new Error('.shp 파일 형식이 아닙니다.');
   const fileLength = Math.min(buffer.byteLength, view.getInt32(24, false) * 2);
@@ -95,7 +112,7 @@ export function parseShp(buffer: ArrayBuffer): { geometries: (Geometry | null)[]
     const contentLength = view.getInt32(offset + 4, false) * 2;
     const contentAt = offset + 8;
     if (contentAt + contentLength > buffer.byteLength) break;
-    const { geometry, type } = readGeometry(view, contentAt, contentLength);
+    const { geometry, type } = readGeometry(view, contentAt, contentLength, polygons);
     if (!geometry && type !== 0) {
       const name = SHAPE_NAMES[type] ?? `유형 ${type}`;
       skippedTypes.set(name, (skippedTypes.get(name) ?? 0) + 1);
@@ -211,9 +228,9 @@ export function prjToCrs(wkt: string): string | null {
 
 /* ------------------------------------------------------------------ 결합 */
 
-export function readShapefile(parts: ShapefileParts, layerName = ''): ShapefileResult {
+export function readShapefile(parts: ShapefileParts, layerName = '', options: { polygons?: boolean } = {}): ShapefileResult {
   const warnings: string[] = [];
-  const { geometries, skippedTypes } = parseShp(parts.shp);
+  const { geometries, skippedTypes } = parseShp(parts.shp, options.polygons);
   let records: Record<string, string | number | boolean | null>[] = [];
   if (parts.dbf) {
     const dbf = parseDbf(parts.dbf, parts.cpg);

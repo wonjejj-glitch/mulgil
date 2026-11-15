@@ -259,6 +259,13 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     `prepare.ts`(격자 범위·셀 상한 30만, SWMM 출력 Flooding → 유입원, `.asc` 내보내기, 맨홀 기준 DEM 보정량), `flood.worker.ts`, `app/floodActions.ts`(DEM = 지형 타일 z15 또는
     `interpolatorFromFiles`, 지반고 'manholes' = 맨홀 지반고 IDW(도면 좌표 관망은 강제), 하수 run 이 바뀌면 결과 삭제·실행 중지, runId 로 중지된 실행 무시), `store/useFloodStore.ts`, `components/map/floodLayer.ts`(BitmapLayer, 하수 레이어 아래), 하수 도크 '침수 해석' 탭(`FloodPanel`).
     한 방향(1D→2D) — 지표 물의 관 재유입·직접 강우 유출·건물 장애물은 없음.
+  - **하수도 GIS(SHP) → 하수 관망 (2026-11-15)**: `core/sewer/fromGis.ts`(국가 하수도 GIS 표준 SWL_PIPE_LM·SWL_MANH_PS 필드 + 한글·영문 별칭,
+    끝점 = 맨홀 번호(3 m 이내일 때) → 1 m 이내 맨홀 → 가상 절점 J*, 용도 SBA001 합류·002 차집·003 우수·004 오수(토구 연결로 추정),
+    박스 = 같은 단면적 원형, 구역 = 전체 / 처리분구·배수분구 면(짝홀 판정, 관 중점) / 하류 맨홀 상류(BFS 트리), 분기는 큰 관 하나, 순환은 가장 거꾸로 기운 관을 끊음,
+    지반고 빈 값 = 관저고+관경+토피 → 이웃 평균, 관 꼭대기가 지반고보다 높으면 지반고를 올리고 보고), `app/sewerGisImport.ts`(레이어 분류 OD_TABLE·이름·필드,
+    주석·물받이·연결관 등은 읽지 않음, 좌표 → EPSG:5186), `store/useSewerGisStore.ts`, `components/modals/SewerGisModal.tsx`(모달 'sewerGis').
+    상수 '열기'로 하수 GIS 를 넣으면 이쪽으로 넘긴다. `shapefile.ts` 는 `polygons` 옵션일 때만 면을 읽는다.
+    실제 자료(시 전체 관거 4.8만·맨홀 4.4만)는 저장소에 넣지 않는다 — 테스트는 가짜 자료(`fromGis.test.ts`).
   - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.

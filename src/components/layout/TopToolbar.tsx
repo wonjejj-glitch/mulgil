@@ -57,6 +57,7 @@ import {
   runNetworkValidation,
   runSimulation,
 } from '../../app/actions';
+import { openSewerGisFiles } from '../../app/sewerGisImport';
 import { applyDesignToProject, exportSewerCsv, exportSewerInp, openSewerFile, saveSewerProject } from '../../app/sewerActions';
 import {
   correctSewerGround,
@@ -218,6 +219,7 @@ export function TopToolbar() {
   const fileInput = useRef<HTMLInputElement | null>(null);
   const sewerFileInput = useRef<HTMLInputElement | null>(null);
   const swmmImportInput = useRef<HTMLInputElement | null>(null);
+  const sewerGisInput = useRef<HTMLInputElement | null>(null);
   const sewer = useUIStore((s) => s.domain === 'sewer');
   const swmmViewer = useSwmmStore((s) => s.project !== null);
   const sewerSelected = useSewerStore((s) => s.selection !== null);
@@ -285,6 +287,14 @@ export function TopToolbar() {
                 onClick={() => {
                   close();
                   swmmImportInput.current?.click();
+                }}
+              />
+              <MenuItem
+                icon={FileInput}
+                label="하수도 GIS(SHP: 관거·맨홀·처리분구)에서 관망 만들기"
+                onClick={() => {
+                  close();
+                  sewerGisInput.current?.click();
                 }}
               />
               <div className="my-1 border-t border-line" />
@@ -435,6 +445,7 @@ export function TopToolbar() {
                   {head('우수 · 하수')}
                   {item(SlidersHorizontal, '설계 조건 · 일괄 표 편집 (유역·강우 포함)', () => openModal('sewer'))}
                   {item(FileInput, 'SWMM .inp → 편집 가능한 하수 관망으로 가져오기', () => swmmImportInput.current?.click())}
+                  {item(FileInput, '하수도 GIS(SHP)에서 관망 만들기', () => sewerGisInput.current?.click())}
                   {item(Mountain, '지반고 보정 — 지형 타일 (매설 깊이 유지)', () => void correctSewerGround(true))}
                   {item(Mountain, '지반고 보정 — 지형 타일 (지반고만)', () => void correctSewerGround(false))}
                   {item(RefreshCw, '설계 결과를 관망에 반영', applyDesignToProject)}
@@ -486,6 +497,18 @@ export function TopToolbar() {
           const file = event.target.files?.[0];
           event.target.value = '';
           if (file) void openSewerFile(file).then(fitToSewer);
+        }}
+      />
+      <input
+        ref={sewerGisInput}
+        type="file"
+        multiple
+        accept=".shp,.dbf,.prj,.cpg,.shx,.zip"
+        className="hidden"
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = '';
+          if (files.length > 0) void openSewerGisFiles(files);
         }}
       />
       <input

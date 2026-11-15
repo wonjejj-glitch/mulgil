@@ -14,6 +14,7 @@ import { networkDxf, networkShapefileZip, type ExportCrs } from '../core/io/gisE
 import { linkColumns, linkRows, nodeColumns, nodeRows, tableToCsv } from '../core/engine/resultsExport';
 import { writeInp } from '../core/io/inpWriter';
 import { loadShapefiles } from '../core/io/loadShapefiles';
+import { looksLikeSewerGis, openSewerGisFiles } from './sewerGisImport';
 import { fetchOsmRoads } from './osmRoads';
 import { looksLikeSwmm, readSwmmInp, swmmErrorHint, withRouting } from '../core/swmm/inpReader';
 import { nodeValue } from '../core/swmm/outReader';
@@ -366,6 +367,11 @@ async function importShapefiles(files: File[]): Promise<void> {
   const label = files.length === 1 ? files[0].name : `${baseName(files.find((f) => /\.(shp|zip)$/i.test(f.name))?.name ?? 'shapefile')} 외 ${files.length - 1}개`;
   try {
     const set = await loadShapefiles(await Promise.all(files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() }))));
+    if (looksLikeSewerGis(set.collection.features)) {
+      // 하수도 GIS(관거·맨홀) 자료면 하수 관망 가져오기로 넘긴다
+      await openSewerGisFiles(files);
+      return;
+    }
     const choice = ui.importCrs;
     // 좌측 패널에서 좌표계를 직접 고른 경우(.prj 보다 우선)
     const declared = choice !== 'auto' && choice !== 'local' ? choice : set.crs;

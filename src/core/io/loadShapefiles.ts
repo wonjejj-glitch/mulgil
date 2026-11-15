@@ -30,7 +30,7 @@ const text = (data: ArrayBuffer) => {
   return decoded.startsWith(BOM) ? decoded.slice(1) : decoded;
 };
 
-export async function loadShapefiles(files: InputFile[]): Promise<ShapefileSet> {
+export async function loadShapefiles(files: InputFile[], options: { polygons?: boolean } = {}): Promise<ShapefileSet> {
   // .zip 은 풀어서 일반 파일 목록에 넣는다 (macOS 의 __MACOSX 메타 파일은 무시).
   const expanded: InputFile[] = [];
   for (const file of files) {
@@ -66,7 +66,7 @@ export async function loadShapefiles(files: InputFile[]): Promise<ShapefileSet> 
       warnings.push(`${group.name}: .shp 파일이 없어 건너뛰었습니다.`);
       continue;
     }
-    const result = readShapefile({ shp: group.shp, dbf: group.dbf, prj: group.prj, cpg: group.cpg }, group.name);
+    const result = readShapefile({ shp: group.shp, dbf: group.dbf, prj: group.prj, cpg: group.cpg }, group.name, options);
     warnings.push(...result.warnings);
     if (result.crs) {
       if (crs && crs !== result.crs) warnings.push(`${group.name}: 다른 레이어와 좌표계가 다릅니다 (${result.crs}). 첫 레이어 좌표계(${crs})로 처리합니다.`);
