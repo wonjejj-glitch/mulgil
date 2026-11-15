@@ -6,7 +6,7 @@ export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 't
 /** 작업 영역: 상수(EPANET 관망) / 하수(useSewerStore 의 하수 프로젝트). */
 export type Domain = 'water' | 'sewer';
 export const SEWER_TOOLS: ReadonlySet<Tool> = new Set(['manhole', 'outfall', 'conduit', 'catchment']);
-export type SewerBottomTab = 'profile' | 'review' | 'simulation' | 'flood' | 'quantity';
+export type SewerBottomTab = 'profile' | 'review' | 'simulation' | 'flood' | 'quantity' | 'audit';
 export type Selection = { kind: 'node' | 'link'; id: string } | null;
 
 /** 다중 선택(구역 선택·Ctrl+클릭). 단일 선택(selection)과 별개로 관리한다. */

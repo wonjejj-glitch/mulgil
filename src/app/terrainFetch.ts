@@ -48,10 +48,17 @@ export async function sampleTerrainTiles(points: LngLat[], onProgress?: (done: n
 }
 
 /**
+ * 좌표 범위만으로는 중부·동부·서부원점(5185~5188)을 가를 수 없다. 함께 쓰는 자료(예: 하수 GIS .prj)의 원점을 알면 그것을 쓴다.
+ */
+function tmBelt(detected: string, preferTm?: string): string {
+  return detected === 'EPSG:5186' && preferTm && /^EPSG:518[5-8]$/.test(preferTm) ? preferTm : detected;
+}
+
+/**
  * 표고점 텍스트(XYZ/CSV/TXT: 줄마다 X Y Z, 쉼표·공백·탭 구분, 머리글 줄은 건너뜀)로 IDW 보간기를 만든다.
  * 측량 성과, CAD 점고도, DEM 을 점으로 내보낸 자료 등. 좌표계는 자동 감지하고 모르면 fallbackCrs 를 쓴다.
  */
-export async function interpolatorFromXyz(files: File[], fallbackCrs: string | null): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
+export async function interpolatorFromXyz(files: File[], fallbackCrs: string | null, preferTm?: string): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
   const raw: { xy: [number, number]; z: number }[] = [];
   for (const f of files) {
     const bytes = new Uint8Array(await f.arrayBuffer());
@@ -70,7 +77,7 @@ export async function interpolatorFromXyz(files: File[], fallbackCrs: string | n
     }
   }
   if (raw.length === 0) throw new Error('표고점을 읽지 못했습니다. 줄마다 X Y Z (또는 번호 X Y Z) 형식인지 확인하세요.');
-  const detected = detectCrs(raw.map((r) => r.xy));
+  const detected = tmBelt(detectCrs(raw.map((r) => r.xy)), preferTm);
   const code = detected === 'local' ? fallbackCrs : detected;
   if (!code || code === 'local') throw new Error('표고점 좌표계를 알 수 없습니다. 왼쪽 패널 ‘가져오기 좌표계’를 맞추거나 EPSG 좌표로 된 자료를 넣으세요.');
   const crs = code === 'wgs84' ? ({ kind: 'wgs84' } as const) : ({ kind: 'epsg', code } as const);
@@ -82,7 +89,7 @@ export async function interpolatorFromXyz(files: File[], fallbackCrs: string | n
  * 수치지형도 Shapefile(표고점·등고선, .shp/.dbf/.prj 또는 .zip)로 IDW 보간기를 만든다.
  * 표고는 속성(CONT·NUME·ELEV 등) 또는 도형의 Z 값에서 읽는다.
  */
-export async function interpolatorFromShapefiles(files: File[], fallbackCrs: string | null): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
+export async function interpolatorFromShapefiles(files: File[], fallbackCrs: string | null, preferTm?: string): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
   const set = await loadShapefiles(await Promise.all(files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() }))));
   const raw: { xy: [number, number]; z: number }[] = [];
   for (const feature of set.collection.features) {
@@ -102,7 +109,7 @@ export async function interpolatorFromShapefiles(files: File[], fallbackCrs: str
   }
   if (raw.length === 0) throw new Error('표고 값을 찾지 못했습니다. 표고점·등고선 레이어(속성 CONT·NUME·ELEV 등 또는 Z 좌표)를 넣어 주세요.');
   const declared = set.crs ?? fallbackCrs;
-  const code = declared && (declared === 'wgs84' || declared in CRS_DEFS) ? declared : detectCrs(raw.map((r) => r.xy));
+  const code = declared && (declared === 'wgs84' || declared in CRS_DEFS) ? declared : tmBelt(detectCrs(raw.map((r) => r.xy)), preferTm);
   if (code === 'local') throw new Error('수치지형도의 좌표계를 알 수 없습니다. .prj 파일을 함께 넣어 주세요.');
   const crs = code === 'wgs84' ? ({ kind: 'wgs84' } as const) : ({ kind: 'epsg', code } as const);
   const points: ElevationPoint[] = [];
@@ -122,7 +129,7 @@ export async function interpolatorFromShapefiles(files: File[], fallbackCrs: str
 }
 
 /** 수치지형도 DXF(등고선·표고점)로 IDW 보간기를 만든다. 등고선은 선 위를 10 m 간격으로 채운다. */
-export async function interpolatorFromDxf(files: File[], fallbackCrs: string | null): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
+export async function interpolatorFromDxf(files: File[], fallbackCrs: string | null, preferTm?: string): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
   const raw: DxfElevation[] = [];
   const layers: string[] = [];
   for (const file of files) {
@@ -138,7 +145,7 @@ export async function interpolatorFromDxf(files: File[], fallbackCrs: string | n
     layers.push(...parsed.layers.map((l) => `${file.name}:${l}`));
   }
   if (raw.length === 0) throw new Error('DXF 에서 표고 값을 찾지 못했습니다. 등고선(고도 값이 있는 폴리선)·표고점이 들어 있는 수치지형도 DXF 인지 확인하세요.');
-  const detected = detectCrs(raw.map((r) => r.xy));
+  const detected = tmBelt(detectCrs(raw.map((r) => r.xy)), preferTm);
   const code = detected === 'local' ? fallbackCrs : detected;
   if (!code || code === 'local') throw new Error('DXF 좌표계를 알 수 없습니다. 왼쪽 패널 ‘가져오기 좌표계’를 수치지형도 좌표계(보통 EPSG:5186 중부원점)로 맞추세요.');
   const crs = code === 'wgs84' ? ({ kind: 'wgs84' } as const) : ({ kind: 'epsg', code } as const);
@@ -156,10 +163,10 @@ export async function interpolatorFromDxf(files: File[], fallbackCrs: string | n
 }
 
 /** 파일 확장자로 표고점 텍스트 · DXF · Shapefile 을 골라 보간기를 만든다. */
-export async function interpolatorFromFiles(files: File[], fallbackCrs: string | null): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
+export async function interpolatorFromFiles(files: File[], fallbackCrs: string | null, preferTm?: string): Promise<{ idw: IdwInterpolator; points: number; layers: string[] }> {
   if (files.length === 0) throw new Error('수치지형도(.dxf · .shp 묶음 · .zip) 또는 표고점 텍스트(.xyz·.txt·.csv)를 고르세요.');
-  if (files.every((f) => /\.(xyz|txt|csv|pts)$/i.test(f.name))) return interpolatorFromXyz(files, fallbackCrs);
-  if (files.every((f) => /\.dxf$/i.test(f.name))) return interpolatorFromDxf(files, fallbackCrs);
+  if (files.every((f) => /\.(xyz|txt|csv|pts)$/i.test(f.name))) return interpolatorFromXyz(files, fallbackCrs, preferTm);
+  if (files.every((f) => /\.dxf$/i.test(f.name))) return interpolatorFromDxf(files, fallbackCrs, preferTm);
   if (files.some((f) => /\.dxf$/i.test(f.name))) throw new Error('DXF 와 다른 형식을 섞어 넣을 수 없습니다. 한 가지 형식만 고르세요.');
-  return interpolatorFromShapefiles(files, fallbackCrs);
+  return interpolatorFromShapefiles(files, fallbackCrs, preferTm);
 }

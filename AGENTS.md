@@ -265,6 +265,10 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     지반고 빈 값 = 관저고+관경+토피 → 이웃 평균, 관 꼭대기가 지반고보다 높으면 지반고를 올리고 보고), `app/sewerGisImport.ts`(레이어 분류 OD_TABLE·이름·필드,
     주석·물받이·연결관 등은 읽지 않음, 좌표 → EPSG:5186), `store/useSewerGisStore.ts`, `components/modals/SewerGisModal.tsx`(모달 'sewerGis').
     상수 '열기'로 하수 GIS 를 넣으면 이쪽으로 넘긴다. `shapefile.ts` 는 `polygons` 옵션일 때만 면을 읽는다.
+    자료 점검: `extractSewerProject` 가 `notes`(GisNote: 채움·뺌·불일치·역경사·방향 뒤집음…)를 돌려주고, 지형 자료(옵션 `terrain`: 절점 ID → 표고)를 주면
+    빈 지반고를 토피 다음 순서로 채운다. `auditGroundWithTerrain`(차이 큰 지반고 표시/교체, 관 꼭대기보다 낮으면 교체 안 함), `terrainBias`(|중앙값| > 20 m 면 좌표계 어긋남으로 멈춤).
+    하류 관이 둘인 맨홀에서 관저고가 거꾸로(시점 < 종점 − 2 cm)인 관은 방향을 뒤집는다(관 목록 복사본에서). 결과는 `useSewerGisStore.audit` → 하수 도크 '자료 점검' 탭(`GisAuditPanel`, CSV).
+    `interpolatorFromFiles(files, fallbackCrs, preferTm)` — .prj 없는 TM 좌표는 함께 쓰는 자료의 원점(5185~5188)으로 본다.
     실제 자료(시 전체 관거 4.8만·맨홀 4.4만)는 저장소에 넣지 않는다 — 테스트는 가짜 자료(`fromGis.test.ts`).
   - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).

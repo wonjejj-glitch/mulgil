@@ -5,8 +5,9 @@
  */
 import type { Feature, Position } from 'geojson';
 import { loadShapefiles } from '../core/io/loadShapefiles';
-import { buildGisNetwork, extractSewerProject, type ExtractOptions, type GisPipeInput, type GisPointInput, type XY } from '../core/sewer/fromGis';
-import { SEWER_CRS } from '../core/sewer/mapFrame';
+import { auditGroundWithTerrain, buildGisNetwork, extractSewerProject, terrainBias, type ExtractOptions, type GisPipeInput, type GisPointInput, type TerrainAuditOptions, type XY } from '../core/sewer/fromGis';
+import { SEWER_CRS, xyToLngLat } from '../core/sewer/mapFrame';
+import { interpolatorFromFiles, sampleTerrainTiles } from './terrainFetch';
 import { CRS_DEFS, detectCrs, toWgs84, wgs84ToEpsg } from '../utils/geoMath';
 import { useSewerGisStore, type GisArea } from '../store/useSewerGisStore';
 import { useSewerStore } from '../store/useSewerStore';
@@ -117,7 +118,7 @@ export async function openSewerGisFiles(files: File[]): Promise<void> {
     }
     areas.sort((a, b) => a.layer.localeCompare(b.layer) || a.name.localeCompare(b.name, 'ko'));
     const crsLabel = code === 'wgs84' ? 'WGS84 경위도' : (CRS_DEFS[code as keyof typeof CRS_DEFS]?.label ?? code);
-    store.setData({ net, areas, crsLabel, layers: set.layers, warnings: set.warnings, label: parts.find((f) => /\.(shp|zip)$/i.test(f.name))?.name ?? 'GIS' });
+    store.setData({ net, areas, crsLabel, crs: code, layers: set.layers, warnings: set.warnings, label: parts.find((f) => /\.(shp|zip)$/i.test(f.name))?.name ?? 'GIS' });
   } catch (error) {
     store.setError(error instanceof Error ? error.message : String(error));
   } finally {
@@ -125,41 +126,74 @@ export async function openSewerGisFiles(files: File[]): Promise<void> {
   }
 }
 
-/** 고른 용도·구역으로 하수 관망을 만들어 연다 (실행 취소로 이전 관망으로 돌아갈 수 있음). */
-export function createSewerFromGis(options: ExtractOptions): boolean {
+export type TerrainChoice = { kind: 'none' } | { kind: 'files'; files: File[] } | { kind: 'tiles' };
+
+/** 절점 위치의 지형 지반고 (수치지형도 파일 또는 온라인 지형 타일). */
+async function sampleTerrain(nodes: { id: string; x: number; y: number }[], choice: TerrainChoice, crs: string): Promise<{ terrain: Map<string, number>; label: string }> {
+  const points = nodes.map((n) => xyToLngLat({ kind: 'epsg' }, n.x, n.y));
+  const terrain = new Map<string, number>();
+  if (choice.kind === 'files') {
+    // 수치지형도에 .prj 가 없으면 좌표 범위만으로는 원점을 모르므로 하수 GIS 와 같은 원점으로 본다
+    const { idw, points: count, layers } = await interpolatorFromFiles(choice.files, crs === 'wgs84' ? SEWER_CRS : crs, crs);
+    nodes.forEach((n, i) => {
+      const v = idw.at(points[i]);
+      if (v) terrain.set(n.id, v.z);
+    });
+    return { terrain, label: `수치지형도 (${layers.slice(0, 3).join(', ')}${layers.length > 3 ? ' …' : ''} · 표고 ${count.toLocaleString()}점)` };
+  }
+  const values = await sampleTerrainTiles(points, (d, t) => useSewerGisStore.getState().setBusy(`지형 타일 받는 중… ${d}/${t}`));
+  nodes.forEach((n, i) => Number.isFinite(values[i]) && terrain.set(n.id, values[i]));
+  return { terrain, label: '온라인 지형 타일 (SRTM 30 m 급 — 개략)' };
+}
+
+/** 고른 용도·구역으로 하수 관망을 만들어 연다. 지형 자료를 주면 빈 지반고를 채우고 차이가 큰 맨홀을 점검 목록에 올린다. */
+export async function createSewerFromGis(options: ExtractOptions, choice: TerrainChoice = { kind: 'none' }, audit: TerrainAuditOptions = { threshold: 1, replace: false }): Promise<boolean> {
   const ui = useUIStore.getState();
-  const data = useSewerGisStore.getState().data;
-  if (!data) return false;
+  const gis = useSewerGisStore.getState();
+  const data = gis.data;
+  if (!data || gis.busy) return false;
   try {
-    const { project, report } = extractSewerProject(data.net, options);
+    let built = extractSewerProject(data.net, options);
+    let terrainLabel = '';
+    let replaced = 0;
+    if (choice.kind !== 'none') {
+      gis.setBusy('지형 자료 읽는 중…');
+      const { terrain, label } = await sampleTerrain(built.project.nodes, choice, data.crs);
+      if (terrain.size === 0) throw new Error('관망 위치에 지형 자료가 없습니다. 수치지형도 범위·좌표계(원점)를 확인하세요.');
+      const bias = terrainBias(built.project, terrain);
+      if (Math.abs(bias.median) > 20) {
+        throw new Error(`맨홀 지반고와 지형 자료가 평균 ${bias.median.toFixed(1)} m 차이 납니다. 수치지형도 좌표계(중부·동부원점 등)가 하수 GIS 와 같은지 확인하세요.`);
+      }
+      built = extractSewerProject(data.net, { ...options, terrain });
+      const checked = auditGroundWithTerrain(built.project, terrain, audit);
+      built.notes.push(...checked.notes);
+      replaced = checked.changed;
+      terrainLabel = `${label} · 맨홀 ${terrain.size.toLocaleString()}/${built.project.nodes.length.toLocaleString()}곳 비교, 지반고 차 중앙값 ${bias.median >= 0 ? '+' : ''}${bias.median.toFixed(2)} m`;
+    }
+    const { project, report, notes } = built;
     const sewer = useSewerStore.getState();
     sewer.setProject(project);
     sewer.select(null);
+    useSewerGisStore.getState().setAudit({ projectName: project.name, notes, terrainLabel });
     ui.setDomain('sewer');
     ui.setTool('select');
     ui.openModal(null);
+    ui.setSewerBottomTab('audit');
     fitToSewer();
-    const notes = [
-      report.diversions + report.cycles > 0 && `맨홀에서 하류 관이 여럿이거나 순환하는 관 ${report.diversions + report.cycles}개를 뺐습니다 (설계 모듈은 맨홀마다 하류 관 하나인 수지상만 다룹니다).`,
-      report.small > 0 && `관 ${options.minPipes}개 미만의 작은 조각 ${report.small}개 관을 뺐습니다.`,
-      report.noDiameter > 0 && `관경이 없는 관 ${report.noDiameter}개에 ${options.defaultDiameter * 1000} mm 를 넣었습니다.`,
-      report.boxes > 0 && `박스 관거 ${report.boxes}개는 같은 단면적의 원형으로 바꿨습니다.`,
-      report.filledGround > 0 && `지반고가 없는 절점 ${report.filledGround}개는 관저고+관경+토피 또는 이웃 맨홀로 채웠습니다.`,
-      report.filledInvert > 0 && `관저고가 없는 절점 ${report.filledInvert}개는 연결 관 관저고 또는 지반고 − 1 m − 관경으로 채웠습니다.`,
-      report.raisedGround > 0 && `관 꼭대기가 지반고보다 높은 절점 ${report.raisedGround}개는 지반고를 관 꼭대기 + 5 cm 로 올렸습니다 (자료 확인 필요).`,
-      report.adverse > 0 && `시점 관저고가 종점보다 낮은 역경사 관 ${report.adverse}개가 있습니다 — ‘현황 해석’에서 확인하세요.`,
-      report.outfalls > 1 && `하류 끝(방류구)이 ${report.outfalls}곳입니다. 자료가 끊긴 곳도 방류구가 되니 지도에서 확인하세요.`,
-      '유입량이 없습니다. 유역을 그리거나(A) 맨홀 상시 유입량을 넣은 뒤 ‘현황 해석’을 하세요. ‘설계·해석’은 관저고를 다시 계산합니다.',
-    ].filter((s): s is string => typeof s === 'string');
+    const diffs = notes.filter((n) => n.issue === '지반고 ↔ 지형 차이').length;
     ui.pushToast({
-      level: 'warning',
+      level: notes.length > 0 ? 'warning' : 'success',
       title: `하수 GIS → 관망: 관거 ${report.pipes.toLocaleString()}개 · 맨홀 ${report.manholes.toLocaleString()}개 · 방류구 ${report.outfalls}곳`,
-      message: `좌표계 ${data.crsLabel} → EPSG:5186. 아래 내용을 확인하세요.`,
-      details: notes,
+      message:
+        `좌표계 ${data.crsLabel} → EPSG:5186. 아래 ‘자료 점검’ 탭에 확인·보완할 곳 ${notes.length.toLocaleString()}건을 모았습니다` +
+        (terrainLabel ? ` (지형과 지반고 차이 ${diffs}곳${audit.replace ? ` 중 ${replaced}곳을 지형값으로 바꿈` : ''})` : '') +
+        '. 유입량이 없으니 유역을 그리거나(A) 맨홀 유입량을 넣고 ‘현황 해석’을 하세요.',
     });
     return true;
   } catch (error) {
     useSewerGisStore.getState().setError(error instanceof Error ? error.message : String(error));
     return false;
+  } finally {
+    useSewerGisStore.getState().setBusy(null);
   }
 }

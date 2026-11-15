@@ -315,6 +315,19 @@ export interface ExtractOptions {
   name: string;
   /** 관경이 없는 관에 넣을 값 (m) */
   defaultDiameter: number;
+  /** 절점 ID → 지형(수치지형도 등) 지반고. 빈 지반고를 채울 때 이웃 평균보다 먼저 쓴다. */
+  terrain?: Map<string, number>;
+}
+
+/** 자료 점검 목록 한 줄: 무엇을 채우거나 바꾸거나 뺐는지, 확인이 필요한 곳. */
+export interface GisNote {
+  kind: 'node' | 'conduit';
+  id: string;
+  /** 짧은 분류 (예: '지반고 없음') */
+  issue: string;
+  detail: string;
+  /** 관망에서 뺀 관이면 true (지도에서 찾을 수 없음) */
+  removed?: boolean;
 }
 
 export interface ExtractReport {
@@ -339,6 +352,8 @@ export interface ExtractReport {
   adverse: number;
   /** 관 꼭대기가 지반고보다 높아 지반고를 올린 절점 */
   raisedGround: number;
+  /** 거꾸로 그려진 것으로 보고 방향을 뒤집은 관 */
+  flipped: number;
 }
 
 /** 짝홀 규칙으로 점이 경계 안에 있는지 (구멍·여러 조각 경계 모두 처리). */
@@ -356,8 +371,12 @@ export function insideRings(p: XY, rings: XY[][]): boolean {
 
 const round = (v: number, k = 1000) => Math.round(v * k) / k;
 
-export function extractSewerProject(net: GisNetwork, options: ExtractOptions): { project: SewerProject; report: ExtractReport } {
-  const report: ExtractReport = { pipes: 0, manholes: 0, outfalls: 0, diversions: 0, cycles: 0, small: 0, noDiameter: 0, boxes: 0, filledGround: 0, filledInvert: 0, adverse: 0, raisedGround: 0 };
+export function extractSewerProject(net: GisNetwork, options: ExtractOptions): { project: SewerProject; report: ExtractReport; notes: GisNote[] } {
+  const notes: GisNote[] = [];
+  // 방향을 뒤집을 수 있게 관 목록을 복사해 쓴다 (원본 관망은 다른 구역 추출에 다시 쓴다)
+  const links0: GisLink[] = net.links.map((l) => ({ ...l }));
+  const removed = (k: number, issue: string, detail: string) => notes.push({ kind: 'conduit', id: links0[k].id, issue, detail, removed: true });
+  const report: ExtractReport = { pipes: 0, manholes: 0, outfalls: 0, diversions: 0, cycles: 0, small: 0, noDiameter: 0, boxes: 0, filledGround: 0, filledInvert: 0, adverse: 0, raisedGround: 0, flipped: 0 };
   const usageOk = (l: GisLink) => options.usages.length === 0 || options.usages.includes(l.usage);
   const N = net.nodes.length;
   const keep = new Set<number>(); // 링크 인덱스
@@ -368,7 +387,7 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
     const target = net.nodes.findIndex((n) => n.id === wanted || n.id === `MH${wanted}`);
     if (target < 0) throw new Error(`${wanted}: 그런 맨홀이 없습니다. 맨홀 번호(예: 234035 또는 MH234035)를 확인하세요.`);
     const incoming = new Map<number, number[]>();
-    net.links.forEach((l, k) => {
+    links0.forEach((l, k) => {
       if (!usageOk(l)) return;
       const list = incoming.get(l.to);
       if (list) list.push(k);
@@ -381,9 +400,10 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
       const next: number[] = [];
       for (const v of frontier) {
         for (const k of incoming.get(v) ?? []) {
-          const u = net.links[k].from;
+          const u = links0[k].from;
           if (seen.has(u)) {
             extra++;
+            removed(k, '분기·순환 관 뺌', `${net.nodes[u].id} 에서 다른 경로로 이미 이어져 있어 뺐습니다 (수지상만 다룸).`);
             continue;
           }
           seen.add(u);
@@ -396,30 +416,45 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
     report.diversions = extra;
   } else {
     const region = options.region;
-    net.links.forEach((l, k) => {
+    links0.forEach((l, k) => {
       if (!usageOk(l)) return;
       if (region.kind === 'area' && !insideRings(l.mid, region.rings)) return;
       keep.add(k);
     });
+    // 하류 관이 여럿인 맨홀에서, 관저고로 보아 거꾸로 그려진 관(시점이 종점보다 2 cm 넘게 낮음)은 방향을 뒤집는다
+    const outCount = new Map<number, number>();
+    for (const k of keep) outCount.set(links0[k].from, (outCount.get(links0[k].from) ?? 0) + 1);
+    for (const k of keep) {
+      const l = links0[k];
+      if ((outCount.get(l.from) ?? 0) < 2 || l.startInvert === null || l.endInvert === null || l.endInvert - l.startInvert <= 0.02) continue;
+      outCount.set(l.from, outCount.get(l.from)! - 1);
+      outCount.set(l.to, (outCount.get(l.to) ?? 0) + 1);
+      [l.from, l.to] = [l.to, l.from];
+      [l.startInvert, l.endInvert] = [l.endInvert, l.startInvert];
+      [l.startCover, l.endCover] = [l.endCover, l.startCover];
+      report.flipped++;
+      notes.push({ kind: 'conduit', id: l.id, issue: '방향 뒤집음', detail: `거꾸로 그려진 것으로 보여(관저고 ${l.endInvert.toFixed(2)} → ${l.startInvert.toFixed(2)} m) 흐름 방향을 뒤집었습니다. GIS 자료의 시점·종점을 확인하세요.` });
+    }
     // 하류 관이 여럿이면 하나만: 큰 관경 → 낮은 종점 관저고
     const outs = new Map<number, number[]>();
     for (const k of keep) {
-      const l = net.links[k];
+      const l = links0[k];
       const list = outs.get(l.from);
       if (list) list.push(k);
       else outs.set(l.from, [k]);
     }
     for (const list of outs.values()) {
       if (list.length < 2) continue;
-      list.sort((a, b) => (net.links[b].diameter ?? 0) - (net.links[a].diameter ?? 0) || (net.links[a].endInvert ?? Infinity) - (net.links[b].endInvert ?? Infinity));
+      list.sort((a, b) => (links0[b].diameter ?? 0) - (links0[a].diameter ?? 0) || (links0[a].endInvert ?? Infinity) - (links0[b].endInvert ?? Infinity));
       for (const k of list.slice(1)) {
         keep.delete(k);
         report.diversions++;
+        removed(k, '분기 관 뺌', `${net.nodes[links0[k].from].id} 의 하류 관이 여럿이라 큰 관 ${links0[list[0]].id} 만 남겼습니다.`);
       }
     }
     // 순환 끊기: 절점마다 하류 관이 하나이므로 따라가다 다시 만나면 순환
     const down = new Map<number, number>();
-    for (const k of keep) down.set(net.links[k].from, k);
+    for (const k of keep) down.set(links0[k].from, k);
     const state = new Uint8Array(N); // 0 미방문, 1 경로 위, 2 끝
     for (const start of down.keys()) {
       if (state[start]) continue;
@@ -428,17 +463,18 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
       while (v !== undefined && state[v] === 0 && down.has(v)) {
         state[v] = 1;
         path.push(v);
-        v = net.links[down.get(v)!].to;
+        v = links0[down.get(v)!].to;
       }
       if (state[v] === 1) {
         // v 에서 시작하는 순환: 가장 거꾸로 기운(종점이 높은) 관을 뺀다
         const cycle = path.slice(path.indexOf(v));
         let worst = cycle[0], worstRise = -Infinity;
         for (const u of cycle) {
-          const l = net.links[down.get(u)!];
+          const l = links0[down.get(u)!];
           const rise = (l.endInvert ?? 0) - (l.startInvert ?? 0);
           if (rise > worstRise) [worst, worstRise] = [u, rise];
         }
+        removed(down.get(worst)!, '순환 관 뺌', `관이 돌아서 다시 만나는 고리(${cycle.length}개 관)를 끊으려고 뺐습니다.`);
         keep.delete(down.get(worst)!);
         down.delete(worst);
         report.cycles++;
@@ -449,14 +485,14 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
 
   // 작은 조각 버리기: 하류로 따라가 같은 방류 절점에 닿는 관끼리 한 조각
   const down = new Map<number, number>();
-  for (const k of keep) down.set(net.links[k].from, k);
+  for (const k of keep) down.set(links0[k].from, k);
   const rootOf = new Map<number, number>();
   const findRoot = (v: number): number => {
     const path: number[] = [];
     let u = v;
     while (down.has(u) && !rootOf.has(u)) {
       path.push(u);
-      u = net.links[down.get(u)!].to;
+      u = links0[down.get(u)!].to;
     }
     const r = rootOf.get(u) ?? u;
     for (const p of path) rootOf.set(p, r);
@@ -465,19 +501,20 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
   };
   const size = new Map<number, number>();
   for (const k of keep) {
-    const r = findRoot(net.links[k].from);
+    const r = findRoot(links0[k].from);
     size.set(r, (size.get(r) ?? 0) + 1);
   }
   for (const k of [...keep]) {
-    if ((size.get(findRoot(net.links[k].from)) ?? 0) < options.minPipes) {
+    if ((size.get(findRoot(links0[k].from)) ?? 0) < options.minPipes) {
       keep.delete(k);
       report.small++;
+      removed(k, '작은 조각 뺌', `관 ${options.minPipes}개 미만으로 따로 떨어진 조각입니다.`);
     }
   }
   if (keep.size === 0) throw new Error('고른 용도·구역에 가져올 관거가 없습니다.');
 
   // 남은 관·절점
-  const links = [...keep].sort((a, b) => a - b).map((k) => net.links[k]);
+  const links = [...keep].sort((a, b) => a - b).map((k) => links0[k]);
   const used = new Set<number>();
   for (const l of links) {
     used.add(l.from);
@@ -495,9 +532,11 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
   }
   const diameterOf = (l: GisLink) => l.diameter ?? options.defaultDiameter;
 
-  // 지반고: 맨홀 값 → 관저고 + 관경 + 토피 → 이웃 평균
+  // 지반고: 맨홀 값 → 관저고 + 관경 + 토피 → 지형 자료 → 이웃 평균
   const ground = new Map<number, number>();
+  const groundFrom = new Map<number, string>();
   const invert0 = new Map<number, number>();
+  const terrainOf = (v: number) => options.terrain?.get(net.nodes[v].id);
   for (const v of used) {
     const n = net.nodes[v];
     if (n.invert !== null) invert0.set(v, n.invert);
@@ -514,6 +553,11 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
     }
     if (guesses.length > 0) {
       ground.set(v, guesses.reduce((a, b) => a + b, 0) / guesses.length);
+      groundFrom.set(v, '관저고 + 관경 + 토피');
+      report.filledGround++;
+    } else if (terrainOf(v) !== undefined) {
+      ground.set(v, terrainOf(v)!);
+      groundFrom.set(v, '지형 자료');
       report.filledGround++;
     }
   }
@@ -528,6 +572,7 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
       }
       if (near.length > 0) {
         ground.set(v, near.reduce((a, b) => a + b, 0) / near.length);
+        groundFrom.set(v, '이웃 절점 평균');
         report.filledGround++;
         changed = true;
       }
@@ -551,10 +596,14 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
     if (values.length > 0) {
       const iv = Math.min(...values);
       invert.set(v, iv);
-      if (!invert0.has(v)) report.filledInvert++;
+      if (!invert0.has(v)) {
+        report.filledInvert++;
+        notes.push({ kind: 'node', id: net.nodes[v].id, issue: '관저고 없음', detail: `연결 관의 관저고로 ${iv.toFixed(2)} m 를 넣었습니다.` });
+      }
       if (g === undefined) {
         g = iv + 1.5;
         ground.set(v, g);
+        groundFrom.set(v, '관저고 + 1.5 m (추정)');
         report.filledGround++;
       }
     } else {
@@ -562,11 +611,15 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
       if (g === undefined) {
         g = 10;
         ground.set(v, g);
+        groundFrom.set(v, '기본값 10 m (자료 없음)');
         report.filledGround++;
       }
       invert.set(v, g - 1 - maxD);
       report.filledInvert++;
+      notes.push({ kind: 'node', id: net.nodes[v].id, issue: '관저고 없음', detail: `관저고 자료가 없어 지반고 − 1 m − 관경 = ${(g - 1 - maxD).toFixed(2)} m 로 추정했습니다.` });
     }
+    const from = groundFrom.get(v);
+    if (from) notes.push({ kind: 'node', id: net.nodes[v].id, issue: '지반고 없음', detail: `${from}(으)로 ${g.toFixed(2)} m 를 넣었습니다.` });
   }
 
   const nodes: SewerNode[] = [...used]
@@ -577,7 +630,10 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
       const maxD = Math.max(...(touching.get(v) ?? []).map(diameterOf));
       // 지반고는 관저고 + 관경보다 높아야 한다 (설계 모듈 검증)
       const g = Math.max(ground.get(v)!, iv + maxD + 0.05);
-      if (g > ground.get(v)! + 1e-9) report.raisedGround++;
+      if (g > ground.get(v)! + 1e-9) {
+        report.raisedGround++;
+        notes.push({ kind: 'node', id: n.id, issue: '관 꼭대기 > 지반고', detail: `관저고 ${iv.toFixed(2)} + 관경 ${maxD.toFixed(2)} 가 지반고 ${ground.get(v)!.toFixed(2)} 보다 높아 지반고를 ${g.toFixed(2)} m 로 올렸습니다.` });
+      }
       const outfall = !outDeg.has(v);
       return {
         id: n.id,
@@ -593,8 +649,14 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
     });
   const conduits: SewerConduit[] = links.map((l) => {
     const d = diameterOf(l);
-    if (l.diameter === null) report.noDiameter++;
-    if (l.box) report.boxes++;
+    if (l.diameter === null) {
+      report.noDiameter++;
+      notes.push({ kind: 'conduit', id: l.id, issue: '관경 없음', detail: `기본값 ${Math.round(d * 1000)} mm 를 넣었습니다.` });
+    }
+    if (l.box) {
+      report.boxes++;
+      notes.push({ kind: 'conduit', id: l.id, issue: '박스 → 원형 환산', detail: `같은 단면적의 원형 ${Math.round(d * 1000)} mm 로 바꿨습니다.` });
+    }
     // 관 관저고가 절점 관저고보다 낮거나 3 m 넘게 높거나 지반고 이상이면 입력 오류로 보고 절점 관저고를 쓴다
     const at = (inv: number | null, v: number) => {
       const base = invert.get(v)!;
@@ -602,7 +664,12 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
     };
     const upInv = at(l.startInvert, l.from);
     const dnInv = at(l.endInvert, l.to);
-    if (l.startInvert !== null && l.endInvert !== null && l.startInvert < l.endInvert) report.adverse++;
+    if (l.startInvert !== null && upInv !== l.startInvert) notes.push({ kind: 'conduit', id: l.id, issue: '관저고 불일치', detail: `시점 관저고 ${l.startInvert.toFixed(2)} 가 맨홀 ${net.nodes[l.from].id} 와 맞지 않아 ${upInv.toFixed(2)} m 를 썼습니다.` });
+    if (l.endInvert !== null && dnInv !== l.endInvert) notes.push({ kind: 'conduit', id: l.id, issue: '관저고 불일치', detail: `종점 관저고 ${l.endInvert.toFixed(2)} 가 맨홀 ${net.nodes[l.to].id} 와 맞지 않아 ${dnInv.toFixed(2)} m 를 썼습니다.` });
+    if (l.startInvert !== null && l.endInvert !== null && l.startInvert < l.endInvert) {
+      report.adverse++;
+      notes.push({ kind: 'conduit', id: l.id, issue: '역경사', detail: `시점 ${l.startInvert.toFixed(2)} < 종점 ${l.endInvert.toFixed(2)} m — 흐름 방향이나 관저고를 확인하세요.` });
+    }
     return {
       id: l.id,
       upstream: net.nodes[l.from].id,
@@ -617,6 +684,9 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
   report.pipes = conduits.length;
   report.outfalls = nodes.filter((n) => n.kind === 'OUTFALL').length;
   report.manholes = nodes.length - report.outfalls;
+  if (report.outfalls > 1) {
+    for (const n of nodes) if (n.kind === 'OUTFALL') notes.push({ kind: 'node', id: n.id, issue: '하류 끝 (방류구)', detail: '구역 경계에서 잘렸거나 자료가 끊긴 곳인지, 실제 방류 지점인지 확인하세요.' });
+  }
 
   const project: SewerProject = {
     schema_version: 1,
@@ -627,5 +697,52 @@ export function extractSewerProject(net: GisNetwork, options: ExtractOptions): {
     options: defaultOptions(),
     constraints: defaultConstraints(),
   };
-  return { project, report };
+  return { project, report, notes };
+}
+
+/* ------------------------------------------------------------------ 3) 지형 자료로 지반고 점검 */
+
+export interface TerrainAuditOptions {
+  /** 이 차이(m) 이상이면 목록에 올린다 */
+  threshold: number;
+  /** 차이가 큰 지반고를 지형값으로 바꾼다 (관 꼭대기보다 낮아지면 바꾸지 않음) */
+  replace: boolean;
+}
+
+/** 지형 자료와 맨홀 지반고 차이의 중앙값 — 좌표계가 어긋났는지 보는 데 쓴다. */
+export function terrainBias(project: SewerProject, terrain: Map<string, number>): { median: number; samples: number } {
+  const d = project.nodes.flatMap((n) => (terrain.has(n.id) ? [n.ground - terrain.get(n.id)!] : [])).sort((a, b) => a - b);
+  return { median: d.length ? d[Math.floor(d.length / 2)] : 0, samples: d.length };
+}
+
+/**
+ * 맨홀 지반고를 지형 자료와 비교해 차이가 큰 곳을 목록으로 돌려준다. replace 면 지형값으로 바꾼다(프로젝트를 고친다).
+ * 관 꼭대기 + 5 cm 보다 낮아지는 경우는 관저고 자료와 맞지 않으므로 바꾸지 않고 따로 알린다.
+ */
+export function auditGroundWithTerrain(project: SewerProject, terrain: Map<string, number>, options: TerrainAuditOptions): { notes: GisNote[]; changed: number } {
+  const notes: GisNote[] = [];
+  const crown = new Map<string, number>();
+  for (const c of project.conduits) {
+    crown.set(c.upstream, Math.max(crown.get(c.upstream) ?? 0, c.diameter + c.inlet_offset));
+    crown.set(c.downstream, Math.max(crown.get(c.downstream) ?? 0, c.diameter + c.outlet_offset));
+  }
+  let changed = 0;
+  for (const n of project.nodes) {
+    const t = terrain.get(n.id);
+    if (t === undefined) continue;
+    const diff = n.ground - t;
+    if (Math.abs(diff) < options.threshold) continue;
+    const text = `GIS ${n.ground.toFixed(2)} · 지형 ${t.toFixed(2)} (차 ${diff >= 0 ? '+' : ''}${diff.toFixed(2)} m)`;
+    const floor = n.invert + (crown.get(n.id) ?? 0) + 0.05;
+    if (options.replace && t > floor) {
+      n.ground = round(t);
+      changed++;
+      notes.push({ kind: 'node', id: n.id, issue: '지반고 ↔ 지형 차이', detail: `${text} → 지형값으로 바꿨습니다.` });
+    } else if (options.replace) {
+      notes.push({ kind: 'node', id: n.id, issue: '지반고 ↔ 지형 차이', detail: `${text} → 지형값이 관 꼭대기보다 낮아 바꾸지 않았습니다. 관저고를 확인하세요.` });
+    } else {
+      notes.push({ kind: 'node', id: n.id, issue: '지반고 ↔ 지형 차이', detail: `${text} — 측량값·지형 자료 중 어느 쪽이 맞는지 확인하세요.` });
+    }
+  }
+  return { notes, changed };
 }

@@ -1,12 +1,13 @@
 /** 하수도 GIS(SHP) → 하수 관망: 용도·구역 고르기 대화상자. 읽기는 app/sewerGisImport.ts, 변환은 core/sewer/fromGis.ts. */
-import { LoaderCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { FileUp, LoaderCircle } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
 import { createSewerFromGis } from '../../app/sewerGisImport';
 import { insideRings, usageLabel, type GisRegion } from '../../core/sewer/fromGis';
 import { useSewerGisStore } from '../../store/useSewerGisStore';
 import { useUIStore } from '../../store/useUIStore';
 import { Button, NumberField } from '../ui/fields';
 import { Modal } from '../ui/Modal';
+import { NgiiLink } from '../ui/DataLinks';
 
 type RegionKind = 'area' | 'outlet' | 'all';
 
@@ -26,6 +27,11 @@ export function SewerGisModal() {
   const [outlet, setOutlet] = useState('');
   const [minPipes, setMinPipes] = useState(5);
   const [defaultMm, setDefaultMm] = useState(300);
+  const [terrainKind, setTerrainKind] = useState<'none' | 'files' | 'tiles'>('none');
+  const [terrainFiles, setTerrainFiles] = useState<File[]>([]);
+  const [threshold, setThreshold] = useState(1);
+  const [replace, setReplace] = useState(false);
+  const terrainInput = useRef<HTMLInputElement>(null);
 
   const areaChoices = useMemo(
     () => (data ? data.areas.map((a, i) => ({ a, i })).filter(({ a }) => !filter || `${a.layer} ${a.name}`.includes(filter)) : []),
@@ -49,13 +55,13 @@ export function SewerGisModal() {
 
   const create = () => {
     if (!data || !region) return;
-    createSewerFromGis({
+    void createSewerFromGis({
       usages,
       region,
       minPipes: Math.max(1, Math.round(minPipes)),
       defaultDiameter: Math.max(0.1, defaultMm / 1000),
       name: regionKind === 'area' && area ? `${area.name} (${usages.map(usageLabel).join('·')})` : `${data.label.replace(/\.(shp|zip)$/i, '')} (${usages.map(usageLabel).join('·')})`,
-    });
+    }, terrainKind === 'files' ? { kind: 'files', files: terrainFiles } : terrainKind === 'tiles' ? { kind: 'tiles' } : { kind: 'none' }, { threshold: Math.max(0.1, threshold), replace });
   };
 
   const s = data?.net.stats;
@@ -71,7 +77,7 @@ export function SewerGisModal() {
             {preview !== null && preview > 5000 && ' — 많으면 화면·해석이 느립니다. 구역을 좁히세요.'}
           </span>
           <Button onClick={close}>취소</Button>
-          <Button variant="primary" disabled={!data || !region || usages.length === 0 || busy !== null} onClick={create}>
+          <Button variant="primary" disabled={!data || !region || usages.length === 0 || busy !== null || (terrainKind === 'files' && terrainFiles.length === 0)} onClick={create}>
             관망 만들기
           </Button>
         </>
@@ -162,6 +168,60 @@ export function SewerGisModal() {
             {data.areas.length === 0 && (
               <p className="mt-1 text-[11px] text-ink-muted">처리분구·배수분구(면) .shp 를 함께 고르면 구역별로 가져올 수 있습니다.</p>
             )}
+          </section>
+
+          <section>
+            <h3 className="mb-1 font-semibold text-ink">지형 자료로 점검·보완 (선택)</h3>
+            <div className="flex gap-4 text-ink-soft">
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={terrainKind === 'none'} onChange={() => setTerrainKind('none')} /> 안 함
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={terrainKind === 'files'} onChange={() => setTerrainKind('files')} /> 수치지형도 (DXF·SHP·XYZ)
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={terrainKind === 'tiles'} onChange={() => setTerrainKind('tiles')} /> 지형 타일 (개략)
+              </label>
+            </div>
+            {terrainKind === 'files' && (
+              <div className="mt-2 flex items-center gap-2">
+                <Button onClick={() => terrainInput.current?.click()}>
+                  <FileUp size={12} /> {terrainFiles.length > 0 ? `${terrainFiles.length}개 파일` : '수치지형도 고르기'}
+                </Button>
+                <input
+                  ref={terrainInput}
+                  type="file"
+                  multiple
+                  accept=".dxf,.shp,.dbf,.prj,.cpg,.shx,.zip,.xyz,.txt,.csv,.pts"
+                  className="hidden"
+                  onChange={(e) => {
+                    setTerrainFiles(Array.from(e.target.files ?? []));
+                    e.target.value = '';
+                  }}
+                />
+                <span className="text-[11px] text-ink-muted">
+                  <NgiiLink />
+                </span>
+              </div>
+            )}
+            {terrainKind !== 'none' && (
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-ink-soft">
+                <label className="flex items-center gap-1">
+                  지반고와 지형이
+                  <span className="w-16">
+                    <NumberField value={threshold} min={0.1} step={0.1} onCommit={setThreshold} />
+                  </span>
+                  m 넘게 다르면 점검 목록에
+                </label>
+                <label className="flex items-center gap-1">
+                  <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /> 지형값으로 바꾸기
+                </label>
+              </div>
+            )}
+            <p className="mt-1 text-[11px] text-ink-muted">
+              빈 지반고는 관저고+관경+토피 다음으로 지형값을 씁니다. 맨홀 지반고가 지형과 크게 다른 곳은 ‘자료 점검’ 탭에 올립니다(기본은 표시만 — 측량값이 맞을 수 있음).
+              {terrainKind === 'files' && ' 수치지형도에 .prj 가 없으면 하수 GIS 와 같은 원점으로 봅니다.'}
+            </p>
           </section>
 
           <section className="grid grid-cols-2 gap-3">

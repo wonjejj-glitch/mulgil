@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildGisNetwork, extractSewerProject, insideRings, usageLabel, type GisPipeInput, type GisPointInput, type XY } from './fromGis';
+import { auditGroundWithTerrain, buildGisNetwork, extractSewerProject, insideRings, terrainBias, usageLabel, type GisPipeInput, type GisPointInput, type XY } from './fromGis';
 import { buildNetwork } from './topology';
 import { parseSewerProject } from './validate';
 
@@ -91,5 +91,61 @@ describe('extractSewerProject', () => {
     expect(usageLabel('SBA003')).toBe('우수');
     expect(usageLabel('합류관')).toBe('합류');
     expect(usageLabel('')).toBe('미상');
+  });
+});
+
+describe('자료 점검 · 지형 자료', () => {
+  const net = buildGisNetwork(pipes, manholes);
+  const opts = { usages: ['SBA004'], region: { kind: 'all' as const }, minPipes: 1, name: 't', defaultDiameter: 0.3 };
+
+  it('채우거나 뺀 것을 점검 목록으로 돌려준다', () => {
+    const { notes } = extractSewerProject(net, opts);
+    expect(notes.some((n) => n.id === 'MH4' && n.issue === '관저고 없음')).toBe(true);
+    const diverted = extractSewerProject(buildGisNetwork([...pipes, pipe('104', [[20, 0], [20, 10]], { BOM_IDN: 2, EOM_IDN: 4, STD_DIP: 200 })], manholes), opts);
+    expect(diverted.notes.find((n) => n.issue === '분기 관 뺌')).toMatchObject({ id: 'P104', removed: true });
+  });
+
+  it('지반고가 없으면 토피 다음으로 지형값을 쓴다', () => {
+    // 맨홀 없이 관만: 끝점 지반고가 없고 토피도 없다
+    const lone = buildGisNetwork([pipe('1', [[0, 0], [10, 0]], { SBK_HSL: '5', SBL_HSL: '4.9' })], []);
+    const ids = lone.nodes.map((n) => n.id);
+    const terrain = new Map([[ids[0], 7.2], [ids[1], 7.0]]);
+    const { project, notes } = extractSewerProject(lone, { ...opts, terrain });
+    expect(project.nodes.map((n) => n.ground)).toEqual([7.2, 7]);
+    expect(notes.filter((n) => n.issue === '지반고 없음' && n.detail.includes('지형 자료'))).toHaveLength(2);
+  });
+
+  it('지형과 차이가 큰 지반고를 표시하거나 바꾼다', () => {
+    const { project } = extractSewerProject(net, opts);
+    const terrain = new Map([['MH1', 12.1], ['MH2', 14.0], ['MH3', 10.1]]);
+    expect(terrainBias(project, terrain).samples).toBe(3);
+    const shown = auditGroundWithTerrain(structuredClone(project), terrain, { threshold: 1, replace: false });
+    expect(shown.notes.map((n) => n.id)).toEqual(['MH2', 'MH3']);
+    expect(shown.changed).toBe(0);
+    const p = structuredClone(project);
+    // MH3 지형 10.1 은 관저고 9.5 + 관경 0.3 + 5 cm 보다 높으니 바뀌고, MH2 14.0 도 바뀐다
+    const fixed = auditGroundWithTerrain(p, terrain, { threshold: 1, replace: true });
+    expect(fixed.changed).toBe(2);
+    expect(p.nodes.find((n) => n.id === 'MH3')!.ground).toBe(10.1);
+    expect(() => parseSewerProject(p)).not.toThrow();
+    // 관 꼭대기보다 낮은 지형값은 바꾸지 않는다
+    const low = structuredClone(project);
+    const r = auditGroundWithTerrain(low, new Map([['MH3', 9.6]]), { threshold: 1, replace: true });
+    expect(r.changed).toBe(0);
+    expect(r.notes[0].detail).toContain('바꾸지 않았습니다');
+  });
+});
+
+describe('거꾸로 그려진 관', () => {
+  it('하류 관이 둘인 맨홀에서 관저고가 거꾸로인 관은 빼지 않고 뒤집는다', () => {
+    const net = buildGisNetwork([...pipes, pipe('105', [[20, 0], [20, -10]], { BOM_IDN: 2, EOM_IDN: 5, SBK_HSL: '9.9', SBL_HSL: '10.4' })], [...manholes, mh('5', 20, -10, 12.4, 10.4)]);
+    const { project, report, notes } = extractSewerProject(net, { usages: ['SBA004'], region: { kind: 'all' }, minPipes: 1, name: 't', defaultDiameter: 0.3 });
+    expect(report.flipped).toBe(1);
+    expect(report.diversions).toBe(0);
+    expect(project.conduits.find((c) => c.id === 'P105')).toMatchObject({ upstream: 'MH5', downstream: 'MH2' });
+    expect(notes.some((n) => n.issue === '방향 뒤집음' && n.id === 'P105')).toBe(true);
+    // 원본 관망은 바뀌지 않는다
+    expect(net.nodes[net.links.find((l) => l.id === 'P105')!.from].id).toBe('MH2');
+    expect(() => buildNetwork(project)).not.toThrow();
   });
 });

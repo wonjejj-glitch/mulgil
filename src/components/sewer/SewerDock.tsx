@@ -11,6 +11,7 @@ import { useUIStore, type SewerBottomTab } from '../../store/useUIStore';
 import { Button } from '../ui/fields';
 import { SewerProfile, SewerReviewList, SewerSimulationSummary } from './SewerShared';
 import { FloodPanel } from './FloodPanel';
+import { GisAuditPanel } from './GisAuditPanel';
 
 const TABS: { id: SewerBottomTab; label: string }[] = [
   { id: 'profile', label: '종단도' },
@@ -18,6 +19,7 @@ const TABS: { id: SewerBottomTab; label: string }[] = [
   { id: 'simulation', label: 'SWMM 해석 요약' },
   { id: 'flood', label: '침수 해석' },
   { id: 'quantity', label: '수량 산출' },
+  { id: 'audit', label: '자료 점검' },
 ];
 
 const safeName = (s: string) => s.replace(/[/\\:*?"<>|\s]+/g, '_').slice(0, 60) || 'sewer';
@@ -219,6 +221,8 @@ export function SewerDock() {
             <FloodPanel />
           ) : tab === 'quantity' ? (
             <QuantityTab />
+          ) : tab === 'audit' ? (
+            <GisAuditPanel />
           ) : !simulation ? (
             <Empty>‘설계·해석 실행’(F5)을 누르면 자동 설계한 관망을 SWMM 으로 해석해 월류·만관 초과·연속성 오차를 보여 줍니다.</Empty>
           ) : (
