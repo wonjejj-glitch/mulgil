@@ -2,6 +2,7 @@ import {
   Hexagon,
   ArrowDownToLine,
   BookOpen,
+  LandPlot,
   CloudRain,
   Disc,
   Droplets,
@@ -447,6 +448,7 @@ export function TopToolbar() {
             <>
               {head('공통 · 관망 만들기')}
               {item(Users, '수용가 자료로 관망 초안 만들기 (상수·하수)', () => openModal('draft'))}
+              {item(LandPlot, '용지 조서 · 용지도 (지적도, 상수·하수)', () => openModal('land'))}
               <div className="my-1 border-t border-line" />
               {sewer ? (
                 <>

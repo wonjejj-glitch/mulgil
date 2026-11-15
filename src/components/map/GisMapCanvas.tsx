@@ -1,3 +1,5 @@
+import { useLandStore } from '../../store/useLandStore';
+import { buildLandLayers } from './landLayers';
 import { setViewBounds, setViewReader } from '../../app/mapView';
 import type { PickingInfo } from '@deck.gl/core';
 import { useFloodStore } from '../../store/useFloodStore';
@@ -285,7 +287,19 @@ export function GisMapCanvas() {
       swmmProject, swmmThematic, swmmStyleKey, swmmSelection, swmmRun, deckEpoch, sewerLayers, floodLayer,
     ],
   );
-  const deckLayers = useMemo(() => (draftLayers.length > 0 ? [...baseLayers, ...draftLayers] : baseLayers), [baseLayers, draftLayers]);
+  // 지적도·편입 필지 (용지 조서) — 관망 아래
+  const landParcels = useLandStore((s) => s.parcels);
+  const landResult = useLandStore((s) => s.result);
+  const landShow = useLandStore((s) => s.show);
+  const landZoom = zoom >= 17.5 ? 2 : zoom >= 16 ? 1 : 0;
+  const landLayers = useMemo(
+    () => (deckEpoch >= 0 && landShow && !swmmProject ? buildLandLayers(landParcels, landResult, landZoom === 2 ? 17.5 : landZoom === 1 ? 16 : 0) : []),
+    [deckEpoch, landShow, swmmProject, landParcels, landResult, landZoom],
+  );
+  const deckLayers = useMemo(() => {
+    const top = draftLayers.length > 0 ? [...baseLayers, ...draftLayers] : baseLayers;
+    return landLayers.length > 0 ? [...landLayers, ...top] : top;
+  }, [baseLayers, draftLayers, landLayers]);
 
   /* ---------------------------------------------------------------- 픽킹 */
 

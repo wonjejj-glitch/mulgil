@@ -26,7 +26,7 @@ function dxfText(s: string): string {
   return out;
 }
 
-class Dxf {
+export class Dxf {
   private out: string[] = [];
   constructor(private layers: [string, number][]) {}
   private g(code: number, value: string | number) {
