@@ -62,6 +62,8 @@ jobs:
           BASE_PATH: /${{ github.event.repository.name }}/
           # 브이월드 배경지도 키 (저장소 Settings → Secrets → Actions 의 VITE_VWORLD_KEY). 없으면 빈 값 — 사용자가 앱에서 넣는다.
           VITE_VWORLD_KEY: ${{ secrets.VITE_VWORLD_KEY }}
+          # 공공데이터포털 건축물대장(건축HUB) 키 — 모두 같이 쓰는 키(하루 사용량 한도). 없으면 건축물대장 세대수 단추가 꺼진다.
+          VITE_DATA_GO_KR_KEY: ${{ secrets.VITE_DATA_GO_KR_KEY }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

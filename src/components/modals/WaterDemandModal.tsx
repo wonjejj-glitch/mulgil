@@ -2,9 +2,11 @@
  * 상수: 수용가 CSV · 건물 SHP · 지도(OpenStreetMap) 건물로 절점 기본 수요량 넣기.
  * 파일 읽기는 app/sewageImport.ts(하수와 같은 형식), 배분은 core/model/buildingEstimate.ts.
  */
-import { Download, FileUp, LoaderCircle, Map as MapIcon } from 'lucide-react';
+import { Building2, Download, FileUp, LoaderCircle, Map as MapIcon } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import { DATA_GO_KR_KEY, registerHouseholdsAlong } from '../../app/buildingRegister';
 import { fetchOsmBuildings } from '../../app/osmBuildings';
+import { linkPath } from '../../core/model/networkEdit';
 import { readSewageFiles } from '../../app/sewageImport';
 import { assignWaterDemand, DEFAULT_WATER_DEMAND, estimateBuildings, type DemandSource, type WaterDemandOptions } from '../../core/model/buildingEstimate';
 import { m3dToFlowUnits } from '../../core/model/landUse';
@@ -34,6 +36,8 @@ export function WaterDemandModal() {
   const [labels, setLabels] = useState<string[]>([]);
   const [fromMap, setFromMap] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
+  const hasVworld = useUIStore((u) => u.vworldKey !== '');
   const [error, setError] = useState<string | null>(null);
   const [o, setO] = useState<WaterDemandOptions>(DEFAULT_WATER_DEMAND);
   const units = model.options.flowUnits;
@@ -63,6 +67,19 @@ export function WaterDemandModal() {
       setSources(list);
       setLabels(d.labels);
       setFromMap(false);
+    });
+
+  /** 건축물대장(공공데이터포털) 세대수: 관로 주변 필지(브이월드 지적도)에 실제 세대수를 붙인다. */
+  const loadRegister = () =>
+    run(async () => {
+      const paths = Object.values(model.links).flatMap((l) => (l.type === 'pipe' ? [linkPath(model, l)] : []));
+      if (paths.length === 0) throw new Error('관로가 없습니다.');
+      const r = await registerHouseholdsAlong(paths, setProgress);
+      if (r.lots.length === 0) throw new Error('관로 주변 필지에서 건축물대장 건물을 찾지 못했습니다.');
+      setSources(r.lots.map((l) => ({ id: l.pnu, position: l.center, households: l.households })));
+      setLabels([r.label]);
+      setFromMap(false);
+      setProgress('');
     });
 
   const loadMap = () =>
@@ -127,6 +144,14 @@ export function WaterDemandModal() {
             <Button disabled={busy} onClick={() => input.current?.click()}>
               <FileUp size={12} /> 수용가 CSV · 건물 SHP 고르기
             </Button>
+            <Button
+              variant="primary"
+              disabled={busy || junctions.length === 0 || !DATA_GO_KR_KEY || !hasVworld}
+              onClick={() => void loadRegister()}
+              title="관로 주변 필지의 건축물대장(공공데이터포털) 세대수·가구수를 받아 씁니다 — 브이월드 지적도와 함께 씁니다"
+            >
+              <Building2 size={12} /> 건축물대장 세대수 (정확)
+            </Button>
             <Button disabled={busy || junctions.length === 0} onClick={() => void loadMap()} title="자료가 없을 때: 지도(OpenStreetMap) 건물 외곽선·층수·용도로 세대수를 개략 추정합니다">
               <MapIcon size={12} /> 지도에서 건물 읽기 (개략)
             </Button>
@@ -138,6 +163,7 @@ export function WaterDemandModal() {
               ))}
             </select>
             {busy && <LoaderCircle size={14} className="animate-spin text-ink-muted" />}
+            {busy && progress && <span className="text-[11px] text-ink-muted">{progress}</span>}
           </div>
           <input
             ref={input}
@@ -154,6 +180,7 @@ export function WaterDemandModal() {
           <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] text-ink-muted">
             <li><b className="text-ink-soft">수용가 대장 CSV</b>: X·Y(또는 경도·위도) + 사용량(월·일) 또는 세대수 — 가장 정확합니다.</li>
             <li><b className="text-ink-soft">건물 SHP</b>(점·면): 세대수 열이 있으면 씁니다.</li>
+            <li><b className="text-ink-soft">건축물대장 세대수</b>: 수용가 대장이 없을 때 가장 좋은 방법 — 관로 주변 필지의 건축물대장(공동주택 세대수, 단독·다가구 가구수, 상가 등은 연면적 환산)을 받아 씁니다. 공개 사이트에서 됩니다.</li>
             <li><b className="text-ink-soft">지도에서 건물 읽기</b>: 자료가 하나도 없을 때 참고용 — OpenStreetMap 건물 면적·층수·용도로 세대수를 개략 추정합니다(정확도 낮음, 빠진 건물 있음).</li>
           </ul>
           {labels.length > 0 && (

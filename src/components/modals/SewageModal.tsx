@@ -1,7 +1,8 @@
 /** 수용가·건물·하수연결관으로 맨홀 오수 유입량 넣기. 읽기는 app/sewageImport.ts, 배분은 core/sewer/sewage.ts. */
-import { Download, FileUp, LoaderCircle, Map as MapIcon } from 'lucide-react';
+import { Building2, Download, FileUp, LoaderCircle, Map as MapIcon } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { readSewageFiles, type SewageInput } from '../../app/sewageImport';
+import { DATA_GO_KR_KEY, registerHouseholdsAlong } from '../../app/buildingRegister';
 import { fetchOsmBuildings } from '../../app/osmBuildings';
 import { estimateBuildings } from '../../core/model/buildingEstimate';
 import { isGeoreferenced, lngLatToXy, nodePositions } from '../../core/sewer/mapFrame';
@@ -31,6 +32,8 @@ export function SewageModal() {
   const [crs, setCrs] = useState<string>('auto');
   const [data, setData] = useState<SewageInput | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState('');
+  const hasVworld = useUIStore((u) => u.vworldKey !== '');
   const [error, setError] = useState<string | null>(null);
   const [o, setO] = useState<SewageOptions>(DEFAULT_SEWAGE);
   const set = (patch: Partial<SewageOptions>) => setO((prev) => ({ ...prev, ...patch }));
@@ -51,6 +54,33 @@ export function SewageModal() {
   };
 
   /** 수용가·건물 자료가 없을 때: 지도(OpenStreetMap) 건물로 세대수를 개략 추정한다. 이미 읽은 연결관은 그대로 쓴다. */
+  /** 건축물대장(공공데이터포털) 세대수를 관로 주변 필지에 붙여 오수 유입원으로 쓴다. 이미 읽은 연결관은 그대로 쓴다. */
+  const loadRegister = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const pos = nodePositions(project);
+      const paths = project.conduits.flatMap((c) => {
+        const a = pos.get(c.upstream), b = pos.get(c.downstream);
+        return a && b ? [[a, b]] : [];
+      });
+      const r = await registerHouseholdsAlong(paths, setProgress);
+      if (r.lots.length === 0) throw new Error('관로 주변 필지에서 건축물대장 건물을 찾지 못했습니다.');
+      setData((prev) => ({
+        sources: r.lots.map((l) => ({ id: l.pnu, xy: lngLatToXy({ kind: 'epsg' }, l.center), households: l.households })),
+        connections: prev?.connections ?? [],
+        stormConnections: prev?.stormConnections ?? 0,
+        labels: [...(prev?.connections.length ? prev.labels.filter((x) => x.includes('연결관')) : []), r.label],
+        warnings: prev?.warnings.filter((w) => !w.includes('지도 건물')) ?? [],
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+      setProgress('');
+    }
+  };
+
   const loadMap = async () => {
     setBusy(true);
     setError(null);
@@ -127,6 +157,14 @@ export function SewageModal() {
             <Button disabled={busy} onClick={() => input.current?.click()}>
               <FileUp size={12} /> 파일 고르기
             </Button>
+            <Button
+              variant="primary"
+              disabled={busy || !georef || !DATA_GO_KR_KEY || !hasVworld}
+              onClick={() => void loadRegister()}
+              title="관로 주변 필지의 건축물대장(공공데이터포털) 세대수·가구수를 받아 씁니다 — 브이월드 지적도와 함께 씁니다"
+            >
+              <Building2 size={12} /> 건축물대장 세대수 (정확)
+            </Button>
             <Button disabled={busy || !georef} onClick={() => void loadMap()} title="수용가·건물 자료가 없을 때: 지도(OpenStreetMap) 건물 외곽선·층수·용도로 세대수를 개략 추정합니다">
               <MapIcon size={12} /> 지도에서 건물 읽기 (개략)
             </Button>
@@ -138,6 +176,7 @@ export function SewageModal() {
               ))}
             </select>
             {busy && <LoaderCircle size={14} className="animate-spin text-ink-muted" />}
+            {busy && progress && <span className="text-[11px] text-ink-muted">{progress}</span>}
           </div>
           <input
             ref={input}
@@ -154,6 +193,7 @@ export function SewageModal() {
           <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] text-ink-muted">
             <li><b className="text-ink-soft">수용가 대장 CSV</b>: X·Y(또는 경도·위도) + 사용량 또는 세대수 열 — 있으면 가장 정확합니다.</li>
             <li><b className="text-ink-soft">건물 SHP</b>(점·면): 세대수(세대수·HHLD_CNT·가구수 등) 열이 있으면 씁니다.</li>
+            <li><b className="text-ink-soft">건축물대장 세대수</b>: 수용가 대장이 없을 때 가장 좋은 방법 — 관로 주변 필지의 건축물대장(공동주택 세대수, 단독·다가구 가구수, 상가 등은 연면적 환산)을 받아 씁니다. 연결관 SHP 를 먼저 읽어 두면 연결관으로 보낼 맨홀을 정합니다. 공개 사이트에서 됩니다.</li>
             <li><b className="text-ink-soft">지도에서 건물 읽기</b>: 위 자료가 하나도 없을 때 참고용 — OpenStreetMap 건물의 면적·층수·용도로 세대수를 개략 추정합니다(정확도 낮음, 빠진 건물 있음). 연결관 SHP 를 먼저 읽어 두면 연결관으로 보낼 맨홀을 정합니다.</li>
             <li><b className="text-ink-soft">하수연결관 SHP</b>(선): 집이 어느 관으로 들어가는지 정합니다. 수용가·건물 자료가 없으면 연결관 하나를 건물 하나로 봅니다. 우수(SBA003) 연결관은 뺍니다.</li>
           </ul>
