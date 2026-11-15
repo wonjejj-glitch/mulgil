@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignWaterDemand, estimateBuildings, estimateHouseholds, floorsFromParts, floorsFromTags, ringArea, ringCenter } from './buildingEstimate';
+import { assignWaterDemand, estimateBuildings, estimateHouseholds, floorsFromParts, floorsFromTags, ringArea, ringCenter, type MapBuilding } from './buildingEstimate';
 import type { LngLat } from './types';
 
 // 위도 37° 부근 약 20 m × 20 m 사각형
@@ -70,7 +70,7 @@ describe('층수 찾기', () => {
   });
 
   it('건물 부분(building:part)의 최고 층수를 건물에 넣는다', () => {
-    const b = [{ id: 'b', ring: square(127, 37, 40), tags: { building: 'apartments' } }, { id: 'c', ring: square(127.01, 37, 40), tags: { building: 'yes', 'building:levels': '3' } }];
+    const b: MapBuilding[] = [{ id: 'b', ring: square(127, 37, 40), tags: { building: 'apartments' } }, { id: 'c', ring: square(127.01, 37, 40), tags: { building: 'yes', 'building:levels': '3' } }];
     const parts = [
       { id: 'p1', ring: square(127.00005, 37.00005, 10), tags: { 'building:part': 'yes', 'building:levels': '18' } },
       { id: 'p2', ring: square(127.0002, 37.0002, 10), tags: { 'building:part': 'yes', 'building:levels': '25' } },
