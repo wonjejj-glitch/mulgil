@@ -18,7 +18,7 @@ export type BasemapId = 'osm' | 'satellite' | 'vworld-base' | 'vworld-satellite'
 export type NodeTheme = 'none' | 'pressure' | 'head' | 'demand' | 'quality' | 'zone' | 'elevation';
 export type LinkTheme = 'none' | 'velocity' | 'flow' | 'unitHeadloss' | 'quality' | 'zone' | 'diameter';
 export type BottomTab = 'timeline' | 'profile' | 'table' | 'criteria' | 'peak' | 'validation' | 'log';
-export type ModalId = 'validation' | 'simulation' | 'curves' | 'controls' | 'fireflow' | 'correction' | 'sewer' | 'draft' | 'allocate' | 'tools' | 'sewerGis' | 'sewage' | null;
+export type ModalId = 'validation' | 'simulation' | 'curves' | 'controls' | 'fireflow' | 'correction' | 'sewer' | 'draft' | 'allocate' | 'tools' | 'sewerGis' | 'sewage' | 'waterDemand' | null;
 
 /** 지도에서 한 점 고르기 (대화상자를 잠시 닫고 클릭을 기다린다). */
 export interface PointPick {

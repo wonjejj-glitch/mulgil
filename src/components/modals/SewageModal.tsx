@@ -1,8 +1,10 @@
 /** 수용가·건물·하수연결관으로 맨홀 오수 유입량 넣기. 읽기는 app/sewageImport.ts, 배분은 core/sewer/sewage.ts. */
-import { Download, FileUp, LoaderCircle } from 'lucide-react';
+import { Download, FileUp, LoaderCircle, Map as MapIcon } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { readSewageFiles, type SewageInput } from '../../app/sewageImport';
-import { isGeoreferenced } from '../../core/sewer/mapFrame';
+import { fetchOsmBuildings } from '../../app/osmBuildings';
+import { estimateBuildings } from '../../core/model/buildingEstimate';
+import { isGeoreferenced, lngLatToXy, nodePositions } from '../../core/sewer/mapFrame';
 import { assignSewage, DEFAULT_SEWAGE, sewageCsv, sourcesFromConnections, type SewageOptions } from '../../core/sewer/sewage';
 import { useSewerGisStore } from '../../store/useSewerGisStore';
 import { useSewerStore } from '../../store/useSewerStore';
@@ -48,6 +50,33 @@ export function SewageModal() {
     }
   };
 
+  /** 수용가·건물 자료가 없을 때: 지도(OpenStreetMap) 건물로 세대수를 개략 추정한다. 이미 읽은 연결관은 그대로 쓴다. */
+  const loadMap = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const buildings = await fetchOsmBuildings([...nodePositions(project).values()]);
+      const est = estimateBuildings(buildings);
+      if (est.items.length === 0) throw new Error('이 범위의 지도(OpenStreetMap)에 건물이 없습니다. 지도 자료가 비어 있는 지역일 수 있습니다.');
+      const c = est.byCategory;
+      const fmt = (k: keyof typeof c) => `${k} ${c[k].count.toLocaleString()}동 ≈ ${Math.round(c[k].households).toLocaleString()}세대`;
+      setData((prev) => ({
+        sources: est.items.map((b) => ({ id: b.id, xy: lngLatToXy({ kind: 'epsg' }, b.position), households: b.households })),
+        connections: prev?.connections ?? [],
+        stormConnections: prev?.stormConnections ?? 0,
+        labels: [
+          ...(prev?.connections.length ? prev.labels.filter((l) => l.includes('연결관')) : []),
+          `지도(OpenStreetMap) 건물 ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산)`,
+        ],
+        warnings: ['지도 건물로 세대수를 추정했습니다(개략·참고용). 아파트 층수·용도 정보가 없는 건물은 기본값으로 계산해 실제와 크게 다를 수 있습니다.', ...(prev?.warnings ?? [])],
+      }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onlyConnections = !!data && data.sources.length === 0 && data.connections.length > 0;
   const result = useMemo(() => {
     if (!data || !georef) return null;
@@ -73,7 +102,7 @@ export function SewageModal() {
   const total = result?.stats.totalM3day ?? 0;
   return (
     <Modal
-      title="수용가·건물·연결관으로 오수 유입량 넣기"
+      title="수용가·건물·연결관·지도로 오수 유입량 넣기"
       onClose={close}
       widthClass="w-[680px]"
       footer={
@@ -97,6 +126,9 @@ export function SewageModal() {
           <div className="flex flex-wrap items-center gap-2">
             <Button disabled={busy} onClick={() => input.current?.click()}>
               <FileUp size={12} /> 파일 고르기
+            </Button>
+            <Button disabled={busy || !georef} onClick={() => void loadMap()} title="수용가·건물 자료가 없을 때: 지도(OpenStreetMap) 건물 외곽선·층수·용도로 세대수를 개략 추정합니다">
+              <MapIcon size={12} /> 지도에서 건물 읽기 (개략)
             </Button>
             <select className="rounded border border-line bg-raised px-2 py-1 text-ink" value={crs} onChange={(e) => setCrs(e.target.value)} title="CSV 와 .prj 없는 SHP 의 좌표계">
               {CRS_CHOICES.map(([v, l]) => (
@@ -122,6 +154,7 @@ export function SewageModal() {
           <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-[11px] text-ink-muted">
             <li><b className="text-ink-soft">수용가 대장 CSV</b>: X·Y(또는 경도·위도) + 사용량 또는 세대수 열 — 있으면 가장 정확합니다.</li>
             <li><b className="text-ink-soft">건물 SHP</b>(점·면): 세대수(세대수·HHLD_CNT·가구수 등) 열이 있으면 씁니다.</li>
+            <li><b className="text-ink-soft">지도에서 건물 읽기</b>: 위 자료가 하나도 없을 때 참고용 — OpenStreetMap 건물의 면적·층수·용도로 세대수를 개략 추정합니다(정확도 낮음, 빠진 건물 있음). 연결관 SHP 를 먼저 읽어 두면 연결관으로 보낼 맨홀을 정합니다.</li>
             <li><b className="text-ink-soft">하수연결관 SHP</b>(선): 집이 어느 관으로 들어가는지 정합니다. 수용가·건물 자료가 없으면 연결관 하나를 건물 하나로 봅니다. 우수(SBA003) 연결관은 뺍니다.</li>
           </ul>
           {data && (

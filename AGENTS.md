@@ -274,6 +274,9 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     없으면 가장 가까운 관거 상류 맨홀; 오수량 = 사용량×전환율 | 세대×인원×원단위 | 기본 세대; 해석 유량 = 일평균×첨두 배율; `sourcesFromConnections` 는 관망에 닿는 연결관만),
     `app/sewageImport.ts`(CSV = customerCsv 의 parseCsv·guessMapping + 세대수 열, SHP 선=연결관(SBA003 우수 제외)·점/면=건물, TM 원점은 하수 GIS 원점 우선),
     `components/modals/SewageModal.tsx`(모달 'sewage', 적용 = 모든 JUNCTION base_flow 교체, 맨홀별 CSV).
+  - **지도 건물 → 세대수 개략, 상수 절점 수요량**: `core/model/buildingEstimate.ts`(`estimateHouseholds`: 공동주택 연면적×0.8÷세대당 면적, 단독 1, 미상 <200 m² 1,
+    비주거 연면적÷300 m² 세대 환산, 창고·차고 등 제외; `assignWaterDemand`: 가장 가까운 junction), `app/osmBuildings.ts`(Overpass way[building], 범위 25 km² 상한,
+    `OVERPASS_SERVERS` 는 osmRoads 에서 export), 하수 `SewageModal` 의 '지도에서 건물 읽기', 상수 `components/modals/WaterDemandModal.tsx`(모달 'waterDemand', 파일 읽기는 sewageImport 재사용).
   - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.

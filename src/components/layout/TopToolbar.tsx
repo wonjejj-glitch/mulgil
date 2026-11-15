@@ -299,7 +299,7 @@ export function TopToolbar() {
               />
               <MenuItem
                 icon={Users}
-                label="수용가·건물·연결관으로 오수 유입량 넣기"
+                label="수용가·건물·연결관·지도로 오수 유입량 넣기"
                 onClick={() => {
                   close();
                   useUIStore.getState().openModal('sewage');
@@ -454,7 +454,7 @@ export function TopToolbar() {
                   {item(SlidersHorizontal, '설계 조건 · 일괄 표 편집 (유역·강우 포함)', () => openModal('sewer'))}
                   {item(FileInput, 'SWMM .inp → 편집 가능한 하수 관망으로 가져오기', () => swmmImportInput.current?.click())}
                   {item(FileInput, '하수도 GIS(SHP)에서 관망 만들기', () => sewerGisInput.current?.click())}
-                  {item(Users, '수용가·건물·연결관으로 오수 유입량 넣기', () => openModal('sewage'))}
+                  {item(Users, '수용가·건물·연결관·지도로 오수 유입량 넣기', () => openModal('sewage'))}
                   {item(Mountain, '지반고 보정 — 지형 타일 (매설 깊이 유지)', () => void correctSewerGround(true))}
                   {item(Mountain, '지반고 보정 — 지형 타일 (지반고만)', () => void correctSewerGround(false))}
                   {item(RefreshCw, '설계 결과를 관망에 반영', applyDesignToProject)}
@@ -469,6 +469,7 @@ export function TopToolbar() {
               {item(Settings2, '해석 옵션 · 수요 패턴 · 수질', () => openModal('simulation'))}
               {item(ChartSpline, '펌프·배수지 곡선', () => openModal('curves'))}
               {item(Workflow, '제어 규칙 (CONTROLS / RULES)', () => openModal('controls'))}
+              {item(Users, '수용가·건물·지도로 절점 수요량 넣기', () => openModal('waterDemand'))}
               {item(LayoutGrid, '용도지역 분담유량 (수요량 배분)', () => openModal('allocate'))}
               {item(Wrench, '관망 정리 (절점·관 병합, ID 재부여)', () => openModal('tools'))}
               {item(Route, '도로 따라 관로 맞추기 · 표고 보정', () => openModal('correction'))}

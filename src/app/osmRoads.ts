@@ -7,7 +7,7 @@ import type { LngLat } from '../core/model/types';
 const ROAD_TYPES =
   'motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|service|road|track';
 
-const OVERPASS_SERVERS = [
+export const OVERPASS_SERVERS = [
   'https://overpass-api.de/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
