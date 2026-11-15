@@ -570,7 +570,7 @@ export function TopToolbar() {
             <ToolbarButton icon={Settings2} label="해석 옵션" showLabel onClick={() => openModal('simulation')} />
           </>
         )}
-        <ToolbarButton icon={BookOpen} label="사용 설명서" title="사용 설명서 (새 탭)" onClick={() => window.open(`${import.meta.env.BASE_URL}manual.html`, '_blank', 'noopener')} />
+        <ToolbarButton icon={BookOpen} label="사용 설명서" title="쉬운 사용설명서 (새 탭) — 안에서 자세한 설명서로도 갈 수 있어요" onClick={() => window.open(`${import.meta.env.BASE_URL}guide.html`, '_blank', 'noopener')} />
         <button
           type="button"
           disabled={running}

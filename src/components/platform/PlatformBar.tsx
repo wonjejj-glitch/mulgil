@@ -5,7 +5,7 @@
 const PORTAL = 'https://wonjejj-glitch.github.io/mulmaru/';
 
 const APPS = [
-  { id: 'garam', name: '물담', desc: '댐 용수공급', href: 'https://wonjejj-glitch.github.io/garam/' },
+  { id: 'garam', name: '물담', desc: '댐 용수공급', href: 'https://wonjejj-glitch.github.io/muldam/' },
   { id: 'mulgil', name: '물길', desc: '관망해석', href: 'https://wonjejj-glitch.github.io/mulgil/' },
   { id: 'mulkko', name: '물꼬', desc: '하수관로 정비', href: 'https://wonjejj-glitch.github.io/mulkko/' },
 ] as const;
