@@ -173,6 +173,12 @@ export function LeftLayerPanel() {
             </label>
           </div>
         )}
+        <div className="mt-2 border-t border-line pt-1.5">
+          <LayerRow layer="buildings3d" label="3D 건물" swatch="#8b95a3" />
+          <p className="px-1.5 text-[11px] leading-relaxed text-ink-muted">
+            지도를 기울여 건물을 세워 보여 줍니다. 높이는 OpenStreetMap 자료라 실제와 다를 수 있습니다. 오른쪽 단추로 끌면 돌려 볼 수 있습니다.
+          </p>
+        </div>
         {needsKey && (
           <div className="mt-2">
             <FieldRow label="인증키">

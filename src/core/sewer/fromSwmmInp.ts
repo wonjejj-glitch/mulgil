@@ -12,6 +12,7 @@
 import type { LngLat } from '../model/types';
 import { wgs84ToEpsg } from '../../utils/geoMath';
 import { readSwmmInp } from '../swmm/inpReader';
+import { readInpMeta } from './inp';
 import { SEWER_CRS } from './mapFrame';
 import { defaultConstraints, defaultOptions, type SewerBoundary, type SewerCatchment, type SewerConduit, type SewerNode, type SewerProject } from './types';
 import { parseSewerProject, SewerValidationError } from './validate';
@@ -242,8 +243,20 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
     });
   }
   if (skippedSubs.length > 0) warnings.push(`출구가 맨홀이 아닌(다른 유역·방류구·없는 절점) 유역 ${skippedSubs.length}개는 옮기지 않았습니다: ${list(skippedSubs)}`);
+  // 물길에서 내보낸 파일이면 설계 설정(유출계수·강우·제약·방류구 지반고)이 주석으로 들어 있다.
+  const meta = readInpMeta(text);
+  if (meta) {
+    for (const s of catchments) {
+      const c = meta.runoff[s.id];
+      if (typeof c === 'number' && c > 0 && c <= 1) s.runoff_coefficient = c;
+    }
+    for (const n of nodes) {
+      const ground = meta.outfall_ground[n.id];
+      if (n.kind === 'OUTFALL' && typeof ground === 'number' && ground > n.invert) n.ground = ground;
+    }
+  }
   if (catchments.length > 0) {
-    warnings.push('유역의 합리식 유출계수 C 는 파일에 없어 0.65 로 두었습니다. 설계 조건·일괄 표 편집에서 고치세요.');
+    if (!meta) warnings.push('유역의 합리식 유출계수 C 는 파일에 없어 0.65 로 두었습니다. 설계 조건·일괄 표 편집에서 고치세요.');
     if (!horton) warnings.push('침투 모형이 Horton 이 아니어서 침투 값은 기본값(75/5 mm/h, 감쇠 4)으로 두었습니다.');
   }
 
@@ -251,7 +264,8 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
   const options = defaultOptions();
   const routing = option('FLOW_ROUTING');
   if (routing === 'KINWAVE' || routing === 'DYNWAVE') options.routing = routing;
-  warnings.push('강우 곡선·해석 시간·설계 제약은 기본값입니다(파일의 강우 시계열·제어 규칙·LID 등은 옮기지 않음).');
+  const defaultsNote = '강우 곡선·해석 시간·설계 제약은 기본값입니다(파일의 강우 시계열·제어 규칙·LID 등은 옮기지 않음).';
+  if (!meta) warnings.push(defaultsNote);
   const renamed = nodeIds.renamed() + conduitIds.renamed() + catchmentIds.renamed();
   if (renamed > 0) warnings.push(`ID ${renamed}개를 하수 설계 규칙(영문으로 시작, 영문·숫자·_·-)에 맞게 바꿨습니다 (예: 1 → N1).`);
 
@@ -261,7 +275,7 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
   if (branching.length > 0) warnings.push(`하류 관거가 1개가 아닌 맨홀 ${branching.length}개: ${list(branching)}. 자동 설계는 가지형(맨홀마다 하류 관거 1개)만 됩니다 — 지도에서 고치세요.`);
   if (!nodes.some((n) => n.kind === 'OUTFALL')) warnings.push('방류구가 없습니다. 방류구 도구로 하류 끝에 추가하세요.');
 
-  const project: SewerProject = {
+  let project: SewerProject = {
     schema_version: 1,
     name: (name ?? swmm.title ?? '').slice(0, 60) || 'SWMM 가져오기',
     nodes,
@@ -270,6 +284,24 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
     options,
     constraints: defaultConstraints(),
   };
+  if (meta) {
+    // 저장된 설정이 검증을 통과할 때만 쓴다 (손으로 고쳐 깨진 주석이면 기본값으로).
+    const restored: SewerProject = {
+      ...project,
+      name: meta.name.slice(0, 60) || project.name,
+      options: { ...options, ...meta.options },
+      constraints: { ...defaultConstraints(), ...meta.constraints },
+    };
+    try {
+      parseSewerProject(JSON.parse(JSON.stringify(restored)));
+      project = restored;
+      const i = warnings.indexOf('방류구 지반고는 파일에 없어 관저고 + ' + FALLBACK_DEPTH + ' m 로 두었습니다.');
+      if (i >= 0) warnings.splice(i, 1);
+      warnings.push('물길에서 내보낸 파일입니다. 유출계수·강우 곡선·해석 시간·설계 제약·방류구 지반고를 파일에서 복원했습니다.');
+    } catch {
+      warnings.push('파일의 물길 설계 설정이 올바르지 않아 쓰지 않았습니다. ' + defaultsNote);
+    }
+  }
   let valid = true;
   try {
     parseSewerProject(JSON.parse(JSON.stringify(project)));

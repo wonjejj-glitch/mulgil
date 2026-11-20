@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { designSewer } from './design';
 import { applySurveyLevels, asBuiltDesign, parseSurveyCsv } from './survey';
 import { demoProject } from './types';
 
@@ -27,5 +28,22 @@ describe('맨홀 측량 성과 반영', () => {
     expect(d.project.nodes.find((n) => n.id === 'MH2')!.invert).toBe(102.5);
     expect(d.rows.find((r) => r.id === 'P01')!.status).toContain('역경사');
     expect(d.feasible).toBe(false);
+  });
+  it('저유속은 위반이 아니라 참고로 남긴다', () => {
+    const p = demoProject();
+    p.catchments = [];
+    for (const n of p.nodes) n.base_flow = n.kind === 'JUNCTION' ? 0.0002 : 0; // 아주 적은 오수
+    // 관저고를 하류로 고르게 낮춰 순경사를 만든다 (기본 예제 관저고는 지반고 − 1.8)
+    const d = asBuiltDesign(p);
+    const slow = d.rows.filter((r) => r.status.includes('최소유속 미달(참고)'));
+    expect(slow.length).toBeGreaterThan(0);
+    expect(d.notes).toHaveLength(slow.length);
+    expect(d.issues.some((m) => m.includes('유속'))).toBe(false);
+    const design = designSewer(p, {}, 'practical');
+    expect(design.notes!.length).toBeGreaterThan(0);
+    expect(design.issues.some((m) => m.includes('유속'))).toBe(false);
+    expect(design.rows.some((r) => r.status.startsWith('적합 · 최소유속 미달(참고)'))).toBe(true);
+    // 원본 호환 모드는 예전처럼 '유속 범위' 위반
+    expect(designSewer(p, {}, 'compat').notes).toBeUndefined();
   });
 });

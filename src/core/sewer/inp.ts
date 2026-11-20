@@ -99,3 +99,60 @@ export function generateInp(p: SewerProject): string {
   if (drawn.length > 0) add('[POLYGONS]', ...drawn.flatMap((s) => s.polygon!.map(([x, y]) => `${s.id} ${f6(x)} ${f6(y)}`)));
   return `${blocks.map((b) => b.join('\n')).join('\n\n')}\n`;
 }
+
+/* ------------------------------------------------------------------ 물길 설계 설정 (내보내기용) */
+
+/** inp 주석 줄 머리말. SWMM 은 ';' 로 시작하는 줄을 무시하므로 다른 프로그램에는 영향이 없다. */
+export const META_PREFIX = ';;MULGIL ';
+/** SWMM 은 한 줄을 1024자까지만 읽으므로 주석도 짧게 끊는다. */
+const META_CHUNK = 180;
+
+/** SWMM inp 에 담기지 않는 설계 설정 — 다시 열 때 복원한다. */
+export interface SewerInpMeta {
+  v: 1;
+  name: string;
+  options: SewerProject['options'];
+  constraints: SewerProject['constraints'];
+  /** 유역 ID → 합리식 유출계수 C */
+  runoff: Record<string, number>;
+  /** 방류구 ID → 지반고 (inp 에는 방류구 깊이가 없다) */
+  outfall_ground: Record<string, number>;
+}
+
+export function inpMeta(p: SewerProject): SewerInpMeta {
+  return {
+    v: 1,
+    name: p.name,
+    options: p.options,
+    constraints: p.constraints,
+    runoff: Object.fromEntries(p.catchments.map((s) => [s.id, s.runoff_coefficient])),
+    outfall_ground: Object.fromEntries(p.nodes.filter((n) => n.kind === 'OUTFALL').map((n) => [n.id, n.ground])),
+  };
+}
+
+/**
+ * 파일로 내보내는 inp: 해석용 inp(generateInp) 뒤에 물길 설계 설정을 주석으로 붙인다.
+ * 한글 등 비 ASCII 문자는 \uXXXX 로 적어, 편집기·인코딩이 바뀌어도 깨지지 않게 한다.
+ */
+export function generateExportInp(p: SewerProject): string {
+  const json = JSON.stringify(inpMeta(p)).replace(/[^\x20-\x7e]/g, (ch) => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
+  const lines = [';; 아래는 물길(Mulgil) 설계 설정입니다 (유출계수·강우·설계 제약). 다른 프로그램은 이 줄을 무시합니다.'];
+  for (let i = 0; i < json.length; i += META_CHUNK) lines.push(`${META_PREFIX}${json.slice(i, i + META_CHUNK)}`);
+  return `${generateInp(p)}\n${lines.join('\n')}\n`;
+}
+
+/** inp 본문에서 물길 설계 설정 주석을 찾아 돌려준다. 없거나 깨졌으면 null. */
+export function readInpMeta(text: string): SewerInpMeta | null {
+  const chunks = text
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith(META_PREFIX))
+    .map((line) => line.slice(META_PREFIX.length).trim());
+  if (chunks.length === 0) return null;
+  try {
+    const meta = JSON.parse(chunks.join('')) as Partial<SewerInpMeta>;
+    if (meta.v !== 1 || typeof meta.options !== 'object' || typeof meta.constraints !== 'object' || !meta.options || !meta.constraints) return null;
+    return { v: 1, name: typeof meta.name === 'string' ? meta.name : '', options: meta.options, constraints: meta.constraints, runoff: meta.runoff ?? {}, outfall_ground: meta.outfall_ground ?? {} };
+  } catch {
+    return null;
+  }
+}

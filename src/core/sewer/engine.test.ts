@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runSwmm } from '../swmm/swmmRunner';
 import { designSewer } from './design';
-import { generateInp } from './inp';
+import { generateExportInp, generateInp } from './inp';
 import { optimizeSewer } from './optimize';
 import { parseReport, summarizeSimulation, type SimulationSummary } from './report';
 import { demoProject } from './types';
@@ -19,6 +19,15 @@ async function simulateWasm(design: ReturnType<typeof designSewer>): Promise<Sim
 }
 
 describe('실제 SWMM WASM 으로 설계→해석→반복 (SewerStudio 의 공식 엔진 5.2.4 결과와 대조)', () => {
+  it('설계 설정 주석이 붙은 내보내기 파일도 SWMM 이 같은 결과로 해석한다', async () => {
+    const design = designSewer(demoProject());
+    const plain = await runSwmm(generateInp(design.project));
+    const exported = await runSwmm(generateExportInp(design.project));
+    const a = summarizeSimulation(design.project, parseReport(plain.report, design.project));
+    const b = summarizeSimulation(design.project, parseReport(exported.report, design.project));
+    expect(b.continuity).toEqual(a.continuity);
+    expect(b.node_summary).toEqual(a.node_summary);
+  });
   it('기본 예제: 설계한 관망이 월류 없이 해석되고 연속성 오차가 작다', async () => {
     const design = designSewer(demoProject());
     expect(design.feasible).toBe(true);

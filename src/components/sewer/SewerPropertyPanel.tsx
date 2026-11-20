@@ -373,6 +373,11 @@ export function SewerPropertyPanel() {
               : `${design.feasible ? '자동 설계: 모든 제약 만족' : `자동 설계: 제약 위반 ${design.issues.length}건`} — 입력에는 아직 반영하지 않았습니다.`}
           </p>
         )}
+        {design?.notes && (
+          <p className="mt-1 px-0.5 text-[11px] leading-relaxed text-ink-muted" title={design.notes.slice(0, 30).join('\n')}>
+            참고: 최소유속 미달 {design.notes.length}개 — 유량이 적은 오수관에서 흔하며 위반으로 세지 않습니다(퇴적 점검 대상).
+          </p>
+        )}
         <div className="mt-2 grid grid-cols-2 gap-1.5">
           <Button disabled={busy !== null} onClick={() => runSewerDesign()} title="관경·관저고·옵셋을 정하고 제약을 검토합니다">
             <Wand2 size={13} />

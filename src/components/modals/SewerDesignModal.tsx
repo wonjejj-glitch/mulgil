@@ -439,6 +439,11 @@ function DesignTab() {
               ))}
             </ul>
           )}
+          {design.notes && (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted" title={design.notes.slice(0, 30).join('\n')}>
+              참고: 최소유속 미달 {design.notes.length}개 — 유량이 적은 오수관에서 흔하며 위반으로 세지 않습니다(퇴적 점검 대상).
+            </p>
+          )}
           <div className="mt-2 max-h-52 overflow-auto rounded border border-line">
             <table className="w-full text-xs tabular-nums">
               <thead className="sticky top-0 bg-panel text-ink-soft">

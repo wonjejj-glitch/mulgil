@@ -26,9 +26,17 @@ export interface DesignResult {
   rows: DesignRow[];
   issues: string[];
   feasible: boolean;
+  /**
+   * 참고 사항 (위반으로 세지 않음). 지금은 '최소유속 미달' — 유량이 적은 오수관은 최소 관경·최소 경사로도
+   * 최소 유속을 못 채우는 것이 보통이라, 위반이 아니라 퇴적 점검 참고로만 알린다.
+   */
+  notes?: string[];
   /** 현황 해석(survey.ts asBuiltDesign) 결과면 true — 관경·관저고를 새로 정하지 않았다. */
   asBuilt?: boolean;
 }
+
+/** 상태 문구에 붙는 참고 표시 — 관은 '적합' 색으로 남는다. */
+export const LOW_VELOCITY_NOTE = '최소유속 미달(참고)';
 
 export class SewerDesignError extends Error {
   constructor(message: string) {
@@ -43,7 +51,7 @@ const fixed2 = (x: number) => x.toFixed(2);
  * 'compat'   : SewerStudio 와 같은 동작 (정답 벡터 기준). 조건을 만족하는 후보가 없으면 가장 큰 관경.
  * 'practical': 같은 탐색을 먼저 하고, 후보가 없을 때 최소 유속 조건만 빼고 다시 찾는다.
  *              상류 말단처럼 유량이 아주 작아 어떤 경사로도 최소 유속을 못 내는 관에 큰 관을 넣지 않고,
- *              작은 관·최소 경사로 두되 '유속 범위' 위반으로 남긴다 (실무 관행).
+ *              작은 관·최소 경사로 두고 저유속은 위반이 아닌 참고(notes)로 남긴다 (실무 관행).
  */
 export type DesignMode = 'compat' | 'practical';
 
@@ -137,6 +145,7 @@ export function designSewer(
   // C. 실제 기하 재검토
   const nodeOf = new Map(p.nodes.map((n) => [n.id, n]));
   const rows: DesignRow[] = [];
+  const notes: string[] = [];
   for (const c of p.conduits) {
     const u = nodeOf.get(c.upstream)!;
     const v = nodeOf.get(c.downstream)!;
@@ -165,7 +174,11 @@ export function designSewer(
     if (slope < cst.min_slope - 1e-8 || slope > cst.max_slope + 1e-8) problems.push('경사 범위');
     if (cover < cst.min_cover - 1e-8) problems.push('최소 토피');
     if (ratio > cst.max_depth_ratio + 1e-7) problems.push('설계 d/D');
-    if (vel > cst.max_velocity + 1e-7 || (q[c.id] > 0 && vel < cst.min_velocity - 1e-7)) problems.push('유속 범위');
+    // 원본 호환 모드는 정답 벡터와 같아야 하므로 저유속도 '유속 범위' 위반으로 둔다.
+    const slow = q[c.id] > 0 && vel < cst.min_velocity - 1e-7;
+    const lowNote = slow && mode === 'practical';
+    if (vel > cst.max_velocity + 1e-7 || (slow && !lowNote)) problems.push(lowNote ? '최대유속 초과' : '유속 범위');
+    if (lowNote) notes.push(`${c.id}: 유속 ${vel.toFixed(2)} m/s — 최소 ${cst.min_velocity} m/s 미달`);
     if (Math.max(u.ground - u.invert, v.ground - v.invert) > cst.max_depth + 1e-7) problems.push('굴착깊이');
     if (rules.maxDrop !== undefined && drop > rules.maxDrop + 1e-7) problems.push(`단차 ${rules.maxDrop} m 초과`);
     if (problems.length > 0) issues.push(`${c.id}: ${problems.join(', ')} 제약 위반`);
@@ -179,12 +192,13 @@ export function designSewer(
       cover,
       status:
         (problems.length > 0 ? problems.join(' / ') : '적합') +
+        (lowNote ? ` · ${LOW_VELOCITY_NOTE}` : '') +
         (drop > 0 ? ` · ${rules.dropPipeAt === undefined || drop >= rules.dropPipeAt ? '부관 낙차' : '단차'} ${drop.toFixed(2)} m` : ''),
       ...(drop > 0 ? { drop } : {}),
     });
   }
   // 변경된 표고·관경 전체를 다시 검증한다 (ground ≤ invert 가 되면 예외).
-  return { project: revalidate(p), rows, issues, feasible: issues.length === 0 };
+  return { project: revalidate(p), rows, issues, feasible: issues.length === 0, ...(notes.length > 0 ? { notes } : {}) };
 }
 
 /** 만관 유량 (m³/s) — 화면 표시용 보조 */

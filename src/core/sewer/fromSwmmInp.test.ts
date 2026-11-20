@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sewerInp from '../../../public/samples/sample-sewer.inp?raw';
 import { designSewer } from './design';
 import { sewerProjectFromSwmm } from './fromSwmmInp';
-import { generateInp } from './inp';
+import { generateExportInp, generateInp, META_PREFIX } from './inp';
 import { sewerFrame } from './mapFrame';
 import { demoProject } from './types';
 
@@ -52,6 +52,41 @@ describe('SWMM .inp → 하수 프로젝트', () => {
     expect(project.catchments.map((s) => [s.id, s.outlet])).toEqual([['S1', 'J1'], ['S2', 'J2'], ['S3', 'J3'], ['S4', 'J5']]);
     expect(project.catchments[0].area).toBeGreaterThan(0);
     expect(warnings.some((w) => w.includes('유출계수'))).toBe(true);
+  });
+
+  it('내보낸 INP 는 설계 설정(유출계수·강우·제약·방류구 지반고·이름)까지 돌아온다', () => {
+    const original = demoProject();
+    original.catchments[0].runoff_coefficient = 0.9;
+    original.catchments[1].runoff_coefficient = 0.35;
+    original.options.duration_minutes = 240;
+    original.options.design_intensity = 80;
+    original.options.rainfall = [{ minute: 0, intensity: 10 }, { minute: 30, intensity: 90 }, { minute: 60, intensity: 0 }];
+    original.constraints.min_cover = 1.2;
+    original.constraints.diameters = [0.25, 0.3, 0.45, 0.6];
+    const text = generateExportInp(original);
+    // 해석용 본문은 그대로이고, 설정은 짧은 ASCII 주석 줄로만 붙는다
+    expect(text.startsWith(generateInp(original))).toBe(true);
+    const metaLines = text.split('\n').filter((l) => l.startsWith(META_PREFIX));
+    expect(metaLines.length).toBeGreaterThan(0);
+    expect(metaLines.every((l) => l.length < 200 && /^[\x20-\x7e]*$/.test(l))).toBe(true);
+
+    const { project, valid, warnings } = sewerProjectFromSwmm(text, '다른 파일 이름');
+    expect(valid).toBe(true);
+    expect(project.name).toBe(original.name);
+    expect(project.options).toEqual(original.options);
+    expect(project.constraints).toEqual(original.constraints);
+    expect(project.catchments.map((s) => s.runoff_coefficient)).toEqual(original.catchments.map((s) => s.runoff_coefficient));
+    expect(project.nodes.find((n) => n.id === 'OF1')!.ground).toBe(100.8);
+    expect(warnings.some((w) => w.includes('복원'))).toBe(true);
+    expect(warnings.some((w) => w.includes('0.65') || w.includes('기본값입니다'))).toBe(false);
+  });
+
+  it('설정 주석이 깨졌으면 기본값으로 연다', () => {
+    const text = generateExportInp(demoProject()).replace(META_PREFIX, `${META_PREFIX}xx`);
+    const { project, valid, warnings } = sewerProjectFromSwmm(text);
+    expect(valid).toBe(true);
+    expect(project.options.duration_minutes).toBe(180);
+    expect(warnings.some((w) => w.includes('기본값'))).toBe(true);
   });
 
   it('우리 INP 생성기 출력은 값이 그대로 돌아온다 (예제 왕복)', () => {

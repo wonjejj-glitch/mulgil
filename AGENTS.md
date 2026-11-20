@@ -195,7 +195,7 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
   - 한계(원본과 같음): 탐욕적 휴리스틱(비용 최적화 아님), 수지상만, 설계 유량(합리식)과 SWMM 유역 유출은 다른 계산, 월류 절점 양쪽 관로 확대는 원인 진단 없음, 경고 한 줄이면 quality_ok=false.
   - 엔진 대조(`engine.test.ts`): 우리 WASM 5.2.2 로 기본 예제는 월류 0·연속성 오차 작음, 용량 부족 예제는 반복해서 수렴 — 원본의 공식 5.2.4 결과와 같은 자릿수. 5.2.2 와 5.2.4 의 수치 동일성은 보장하지 않는다.
   - `designSewer(project, floors, mode)`: mode 'compat'(기본, 정답 벡터) / 'practical'(앱 기본 — 최소 유속을 어떤 경사로도 못 내는 소유량 관에 가장 큰 관 대신
-    최소 관경·최소 경사를 쓰고 '유속 범위' 위반으로 남김). 정답 벡터 테스트는 compat 로만 돈다. 앱 설정은 `useSewerStore.designMode`(설계 조건 탭).
+    최소 관경·최소 경사를 쓰고, 저유속은 위반이 아니라 `DesignResult.notes` 의 '최소유속 미달(참고)'로 남김 — compat 는 정답 벡터대로 '유속 범위' 위반). 정답 벡터 테스트는 compat 로만 돈다. 앱 설정은 `useSewerStore.designMode`(설계 조건 탭).
   - **검토 목록**(`review.ts`, 설계 대화상자 5번째 탭): 기존 하수 설계 프로그램의 검토 목록 판정 체계 — Overflow·최소/최대 유속(0.6/3.0)·동수위(GL+0, SWMM 결과 필요)·역경사,
     GOOD/NG/-, 다음 NG, CSV.
   - 지도에서 맨홀·관로를 찍어 입력, SWMM .inp → 설계 모델 변환은 아래 ‘하수 모드’ 참고.
@@ -282,6 +282,9 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     비주거 연면적÷300 m² 세대 환산, 창고·차고 등 제외; 층수 = `floorsFromTags`(levels → height÷3) → `floorsFromParts`(안의 building:part 최고 층), 이름 '아파트'/'빌라·연립' 로 용도 보정, Overpass 는 relation·building:part 도 받음; `assignWaterDemand`: 가장 가까운 junction), `app/osmBuildings.ts`(Overpass way[building], 범위 25 km² 상한,
     `OVERPASS_SERVERS` 는 osmRoads 에서 export), 하수 `SewageModal` 의 '지도에서 건물 읽기', 상수 `components/modals/WaterDemandModal.tsx`(모달 'waterDemand', 파일 읽기는 sewageImport 재사용).
     관망 초안: `draftActions.loadCustomersFromMap`(지도 화면 범위 = `app/mapView.ts`, GisMapCanvas 가 살아 있는 지도에서 읽는 함수를 등록)로 수용가 없이도 초안을 만든다.
+  - SWMM inp 내보내기(`generateExportInp`)는 해석용 본문 뒤에 `;;MULGIL <JSON 조각>` 주석으로 설계 설정(옵션·제약·유역 유출계수·방류구 지반고·이름)을
+    붙인다(줄당 180자, 비 ASCII 는 \uXXXX). `sewerProjectFromSwmm` 이 `readInpMeta` 로 읽어 검증을 통과하면 복원한다. 엔진에 넘기는 `generateInp` 는 원본과 바이트 동일.
+  - 3D 건물: `layers.buildings3d` → `buildMapStyle` 이 OpenFreeMap 벡터 타일(`building`, render_height)로 fill-extrusion 레이어를 넣는다(줌 14+, 키 불필요).
   - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.

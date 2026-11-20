@@ -274,7 +274,7 @@ export async function runSewerAsBuiltFromMap(): Promise<void> {
   ui.pushToast({
     level: design.feasible && flooded === 0 ? 'success' : 'warning',
     title: `현황 해석 완료 — 기준 위반 관거 ${design.issues.length}개 · 월류 ${flooded}곳`,
-    message: '관경·관저고는 바꾸지 않았습니다. 아래 ‘검토 목록’과 종단도에서 확인하세요.',
+    message: `관경·관저고는 바꾸지 않았습니다. 아래 ‘검토 목록’과 종단도에서 확인하세요.${design.notes ? ` 참고: 최소유속 미달 ${design.notes.length}개(위반 아님, 퇴적 점검).` : ''}`,
   });
   ui.setSewerBottomTab('review');
 }

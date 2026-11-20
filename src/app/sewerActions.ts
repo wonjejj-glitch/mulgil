@@ -4,7 +4,7 @@
  */
 import { designSewer, type DesignResult } from '../core/sewer/design';
 import { asBuiltDesign } from '../core/sewer/survey';
-import { generateInp } from '../core/sewer/inp';
+import { generateExportInp, generateInp } from '../core/sewer/inp';
 import { optimizeSewer } from '../core/sewer/optimize';
 import { fitOutfallInverts } from '../core/sewer/outfall';
 import { parseReport, summarizeSimulation, type SimulationSummary } from '../core/sewer/report';
@@ -47,7 +47,9 @@ export function runSewerDesign(): DesignResult | null {
     useUIStore.getState().pushToast({
       level: design.feasible ? 'success' : 'warning',
       title: design.feasible ? '자동 설계 완료 — 모든 제약 만족' : `자동 설계 완료 — 제약 위반 ${design.issues.length}건`,
-      message: design.feasible ? '관경·맨홀 관저고·관로 옵셋을 새로 정했습니다. 입력에는 아직 반영하지 않았습니다.' : design.issues.slice(0, 3).join(' · '),
+      message:
+        (design.feasible ? '관경·맨홀 관저고·관로 옵셋을 새로 정했습니다. 입력에는 아직 반영하지 않았습니다.' : design.issues.slice(0, 3).join(' · ')) +
+        (design.notes ? ` (참고: 최소유속 미달 ${design.notes.length}개 — 위반 아님)` : ''),
     });
     return design;
   } catch (error) {
@@ -212,7 +214,7 @@ export function exportSewerInp(): void {
   const project = store.design?.project ?? validatedProject();
   if (!project) return;
   try {
-    downloadText(`${baseName(project.name || 'sewer')}.inp`, generateInp(project));
+    downloadText(`${baseName(project.name || 'sewer')}.inp`, generateExportInp(project));
   } catch (error) {
     store.setError(message(error));
   }

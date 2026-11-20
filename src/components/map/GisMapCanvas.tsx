@@ -26,7 +26,7 @@ import { useSimulationStore } from '../../store/useSimulationStore';
 import { SEWER_TOOLS, useUIStore, type Selection, type Tool } from '../../store/useUIStore';
 import { midpointOfPath, wgs84ToEpsg } from '../../utils/geoMath';
 import { useDraftStore } from '../../store/useDraftStore';
-import { buildMapStyle } from './basemaps';
+import { BUILDINGS_MIN_ZOOM, buildMapStyle } from './basemaps';
 import { buildDraftLayers } from './draftLayers';
 import { ColorRampLegend } from './ColorRampLegend';
 import { DrawingOverlay } from './DrawingOverlay';
@@ -204,7 +204,8 @@ export function GisMapCanvas() {
 
   const basemapDim = useUIStore((s) => s.basemapDim);
   const basemapGray = useUIStore((s) => s.basemapGray);
-  const mapStyle = useMemo(() => buildMapStyle(basemap, vworldKey, basemapDim, basemapGray), [basemap, vworldKey, basemapDim, basemapGray]);
+  const buildings3d = useUIStore((s) => s.layers.buildings3d);
+  const mapStyle = useMemo(() => buildMapStyle(basemap, vworldKey, basemapDim, basemapGray, buildings3d), [basemap, vworldKey, basemapDim, basemapGray, buildings3d]);
   const usUnits = isUsUnits(flowUnits);
 
   const { junctions, sources } = useMemo(() => {
@@ -776,8 +777,10 @@ export function GisMapCanvas() {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady) return;
-    map.easeTo({ pitch: columns3d ? 55 : 0, duration: 700 });
-  }, [columns3d, mapReady]);
+    // 3D 건물은 줌 14 부터 보이므로, 멀리서 켜면 보이는 줌까지 함께 당긴다.
+    const zoom = buildings3d && map.getZoom() < BUILDINGS_MIN_ZOOM + 1.5 ? { zoom: BUILDINGS_MIN_ZOOM + 2 } : {};
+    map.easeTo({ pitch: columns3d || buildings3d ? 55 : 0, duration: 700, ...zoom });
+  }, [columns3d, buildings3d, mapReady]);
 
   /* ---------------------------------------------------------------- 툴팁 */
 

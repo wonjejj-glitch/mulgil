@@ -39,6 +39,8 @@ export interface LayerVisibility {
   labels: boolean;
   arrows: boolean;
   columns3d: boolean;
+  /** 배경지도 위 3D 건물 (OpenStreetMap 건물 높이·층수) */
+  buildings3d: boolean;
 }
 
 export interface Highlight {
@@ -196,6 +198,7 @@ export const useUIStore = create<UIState>()((set, get) => ({
     labels: false,
     arrows: true,
     columns3d: false,
+    buildings3d: false,
   },
   nodeTheme: 'pressure',
   linkTheme: 'velocity',

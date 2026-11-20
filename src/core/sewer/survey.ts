@@ -6,7 +6,7 @@
  * - asBuiltDesign: 관경·관저고를 그대로 두고 지금 기하로 경사·유속·토피를 계산한다
  *   (자동 설계가 관저고를 다시 계산해 측량값을 덮어쓰지 않게, 기존 관거 현황 해석에 쓴다).
  */
-import type { DesignResult, DesignRow } from './design';
+import { LOW_VELOCITY_NOTE, type DesignResult, type DesignRow } from './design';
 import { normalRatio, section } from './hydraulics';
 import { accumulatedFlows, buildNetwork } from './topology';
 import type { SewerProject } from './types';
@@ -114,6 +114,7 @@ export function asBuiltDesign(input: SewerProject): DesignResult {
   const nodeOf = new Map(p.nodes.map((n) => [n.id, n]));
   const rows: DesignRow[] = [];
   const issues: string[] = [];
+  const notes: string[] = [];
   for (const c of p.conduits) {
     const u = nodeOf.get(c.upstream)!;
     const v = nodeOf.get(c.downstream)!;
@@ -129,9 +130,12 @@ export function asBuiltDesign(input: SewerProject): DesignResult {
     else if (slope < cst.min_slope - 1e-8 || slope > cst.max_slope + 1e-8) problems.push('경사 범위');
     if (cover < cst.min_cover - 1e-8) problems.push('최소 토피');
     if (ratio > cst.max_depth_ratio + 1e-7) problems.push('설계 d/D');
-    if (vel > cst.max_velocity + 1e-7 || (q[c.id] > 0 && vel < cst.min_velocity - 1e-7)) problems.push('유속 범위');
+    if (vel > cst.max_velocity + 1e-7) problems.push('최대유속 초과');
+    // 저유속은 위반이 아니라 참고 (역경사·평탄은 위에서 이미 위반으로 잡힌다)
+    const slow = slope > 0 && q[c.id] > 0 && vel < cst.min_velocity - 1e-7;
+    if (slow) notes.push(`${c.id}: 유속 ${vel.toFixed(2)} m/s — 최소 ${cst.min_velocity} m/s 미달`);
     if (problems.length > 0) issues.push(`${c.id}: ${problems.join(', ')} (현황)`);
-    rows.push({ id: c.id, diameter: c.diameter, flow: q[c.id], slope, velocity: vel, depth_ratio: ratio, cover, status: problems.length > 0 ? problems.join(' / ') : '적합' });
+    rows.push({ id: c.id, diameter: c.diameter, flow: q[c.id], slope, velocity: vel, depth_ratio: ratio, cover, status: (problems.length > 0 ? problems.join(' / ') : '적합') + (slow ? ` · ${LOW_VELOCITY_NOTE}` : '') });
   }
-  return { project: p, rows, issues, feasible: issues.length === 0, asBuilt: true };
+  return { project: p, rows, issues, feasible: issues.length === 0, asBuilt: true, ...(notes.length > 0 ? { notes } : {}) };
 }
