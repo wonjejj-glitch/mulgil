@@ -27,6 +27,7 @@ import { SEWER_TOOLS, useUIStore, type Selection, type Tool } from '../../store/
 import { midpointOfPath, wgs84ToEpsg } from '../../utils/geoMath';
 import { useDraftStore } from '../../store/useDraftStore';
 import { BUILDINGS_MIN_ZOOM, buildMapStyle } from './basemaps';
+import { VworldBuildings } from './VworldBuildings';
 import { buildDraftLayers } from './draftLayers';
 import { ColorRampLegend } from './ColorRampLegend';
 import { DrawingOverlay } from './DrawingOverlay';
@@ -205,7 +206,12 @@ export function GisMapCanvas() {
   const basemapDim = useUIStore((s) => s.basemapDim);
   const basemapGray = useUIStore((s) => s.basemapGray);
   const buildings3d = useUIStore((s) => s.layers.buildings3d);
-  const mapStyle = useMemo(() => buildMapStyle(basemap, vworldKey, basemapDim, basemapGray, buildings3d), [basemap, vworldKey, basemapDim, basemapGray, buildings3d]);
+  // 3D 건물: 브이월드 키가 있으면 브이월드 건물(층수), 없거나 조회가 막히면 OpenStreetMap 건물
+  const [buildingsFailedKey, setBuildingsFailedKey] = useState<string | null>(null);
+  const vworldBuildings = buildings3d && vworldKey !== '' && buildingsFailedKey !== vworldKey;
+  const onBuildingsFail = useCallback(() => setBuildingsFailedKey(vworldKey), [vworldKey]);
+  const osmBuildings = buildings3d && !vworldBuildings;
+  const mapStyle = useMemo(() => buildMapStyle(basemap, vworldKey, basemapDim, basemapGray, osmBuildings), [basemap, vworldKey, basemapDim, basemapGray, osmBuildings]);
   const usUnits = isUsUnits(flowUnits);
 
   const { junctions, sources } = useMemo(() => {
@@ -898,6 +904,7 @@ export function GisMapCanvas() {
         onDblClick={onDblClick}
         onContextMenu={onContextMenu}
       >
+        {vworldBuildings && <VworldBuildings vworldKey={vworldKey} onFail={onBuildingsFail} />}
         <DeckOverlay key={deckEpoch} layers={deckLayers} onReady={onOverlayReady} onHover={onHover} getTooltip={getTooltip} />
         <NavigationControl position="top-right" visualizePitch />
         <ScaleControl position="bottom-right" unit="metric" style={{ marginBottom: 34 }} />

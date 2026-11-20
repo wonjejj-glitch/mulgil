@@ -284,7 +284,9 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
     관망 초안: `draftActions.loadCustomersFromMap`(지도 화면 범위 = `app/mapView.ts`, GisMapCanvas 가 살아 있는 지도에서 읽는 함수를 등록)로 수용가 없이도 초안을 만든다.
   - SWMM inp 내보내기(`generateExportInp`)는 해석용 본문 뒤에 `;;MULGIL <JSON 조각>` 주석으로 설계 설정(옵션·제약·유역 유출계수·방류구 지반고·이름)을
     붙인다(줄당 180자, 비 ASCII 는 \uXXXX). `sewerProjectFromSwmm` 이 `readInpMeta` 로 읽어 검증을 통과하면 복원한다. 엔진에 넘기는 `generateInp` 는 원본과 바이트 동일.
-  - 3D 건물: `layers.buildings3d` → `buildMapStyle` 이 OpenFreeMap 벡터 타일(`building`, render_height)로 fill-extrusion 레이어를 넣는다(줌 14+, 키 불필요).
+  - 3D 건물: `layers.buildings3d`. 브이월드 키가 있으면 `components/map/VworldBuildings.tsx` 가 화면 범위를 0.01° 칸(`core/model/buildingCells.ts`)으로 나눠
+    LT_C_SPBD(지상 층수 gro_flo_co)를 JSONP 로 받아 fill-extrusion(층수 × 3.3 m, 줌 14.5+)으로 그린다. 키가 없거나 첫 조회가 실패하면(localhost 등)
+    `buildMapStyle` 의 OpenFreeMap 벡터 타일(`building`, render_height)로 넘어간다.
   - 아직 없는 것: 압송관·펌프장, 박스관(비원형), 다중·구역 선택, 관거 꺾임점, 하수 Shapefile 내보내기,
     왼쪽 패널의 하수용 레이어·주제도(지금은 상수용 그대로 보임), 사용자 지정 기준 위치(local 프로젝트는 항상 서울 기준점).
 - 기능은 공개 문서와 오픈소스 엔진(EPANET)만으로 다시 설계한 것이다. 상용 프로그램의 실행 파일·코드·화면 자산을 가져다 쓰지 않는다.

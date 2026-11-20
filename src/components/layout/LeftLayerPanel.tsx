@@ -176,7 +176,7 @@ export function LeftLayerPanel() {
         <div className="mt-2 border-t border-line pt-1.5">
           <LayerRow layer="buildings3d" label="3D 건물" swatch="#8b95a3" />
           <p className="px-1.5 text-[11px] leading-relaxed text-ink-muted">
-            지도를 기울여 건물을 세워 보여 줍니다. 높이는 OpenStreetMap 자료라 실제와 다를 수 있습니다. 오른쪽 단추로 끌면 돌려 볼 수 있습니다.
+            지도를 기울여 건물을 세워 보여 줍니다. 가까이 확대하면 브이월드 건물 자료의 층수 × 3.3 m 로 세우고, 키가 없으면 OpenStreetMap 건물을 씁니다. 오른쪽 단추로 끌면 돌려 볼 수 있습니다.
           </p>
         </div>
         {needsKey && (

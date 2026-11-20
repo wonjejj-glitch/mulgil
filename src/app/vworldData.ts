@@ -127,3 +127,38 @@ export async function fetchParcelsAlong(key: string, paths: LngLat[][], onProgre
   await Promise.all([worker(), worker(), worker(), worker()]);
   return [...byPnu.values()];
 }
+
+/* ------------------------------------------------------------------ 건물 (3D 표시용) */
+
+export interface VworldBuilding {
+  /** 건물관리번호 */
+  id: string;
+  /** 지상 층수 (없으면 1) */
+  floors: number;
+  polygons: LngLat[][][];
+}
+
+/** 사각형 범위 안의 건물(도로명주소 건물 LT_C_SPBD, 지상 층수 포함). 한 번에 1000동, 최대 maxPages 쪽. */
+export async function fetchBuildingsBox(key: string, box: [number, number, number, number], maxPages = 5): Promise<VworldBuilding[]> {
+  const [w, s, e, n] = box.map((v) => v.toFixed(6));
+  const out: VworldBuilding[] = [];
+  let pages = 1;
+  for (let page = 1; page <= pages && page <= maxPages; page++) {
+    const url =
+      'https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LT_C_SPBD&format=json&crs=EPSG:4326&geometry=true&attribute=true&size=1000' +
+      `&page=${page}&geomFilter=BOX(${w},${s},${e},${n})&key=${encodeURIComponent(key)}&domain=${encodeURIComponent(location.origin)}`;
+    const r = (await jsonp<VworldResponse>(url)).response;
+    if (r.status === 'NOT_FOUND') break;
+    if (r.status !== 'OK') throw new Error(`브이월드 건물 조회 실패: ${r.error?.text ?? r.status}`);
+    for (const f of r.result?.featureCollection?.features ?? []) {
+      const coords = f.geometry.type === 'MultiPolygon' ? (f.geometry.coordinates as number[][][][]) : [f.geometry.coordinates as number[][][]];
+      out.push({
+        id: f.properties.bd_mgt_sn ?? '',
+        floors: Math.max(1, Math.round(Number(f.properties.gro_flo_co) || 1)),
+        polygons: coords.map((poly) => poly.map((ring) => ring.map((c): LngLat => [c[0], c[1]]))),
+      });
+    }
+    pages = Number(r.page?.total ?? 1) || 1;
+  }
+  return out;
+}
