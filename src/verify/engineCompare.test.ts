@@ -158,7 +158,7 @@ describe.skipIf(!DIR || STAGE !== 'compare')('엔진 검증 — 비교', () => {
         }
       });
       const mine: Record<string, number> = {};
-      for (const m of run.report.matchAll(/\*+\s*\n\s*(Runoff Quantity|Flow Routing|Groundwater|Runoff Quality|Quality Routing) Continuity[\s\S]*?Continuity Error \(%\) \.+\s*(-?[\d.]+)/g)) mine[m[1]] = Number(m[2]);
+      for (const m of run.report.matchAll(/(Runoff Quantity|Flow Routing|Groundwater|Runoff Quality|Quality Routing) Continuity[\s\S]*?Continuity Error \(%\) \.+\s*(-?[\d.]+)/g)) mine[m[1]] = Number(m[2]);
       report.push({
         kind: 'sewer',
         net,

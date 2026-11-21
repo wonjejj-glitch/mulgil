@@ -17,7 +17,7 @@ NA, LA, ET = shared_enum.NodeAttribute, shared_enum.LinkAttribute, shared_enum.E
 def continuity(rpt_text: str) -> dict:
     """보고서의 '... Continuity' 표마다 'Continuity Error (%)' 값."""
     out = {}
-    for m in re.finditer(r'\*+\s*\n\s*(Runoff Quantity|Flow Routing|Groundwater|Runoff Quality|Quality Routing) Continuity[\s\S]*?Continuity Error \(%\) \.+\s*(-?[\d.]+)', rpt_text):
+    for m in re.finditer(r'(Runoff Quantity|Flow Routing|Groundwater|Runoff Quality|Quality Routing) Continuity[\s\S]*?Continuity Error \(%\) \.+\s*(-?[\d.]+)', rpt_text):
         out[m.group(1)] = float(m.group(2))
     return out
 
