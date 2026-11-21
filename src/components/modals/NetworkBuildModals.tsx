@@ -160,7 +160,7 @@ function DraftDialog() {
         {s.customers.length > 0 && !s.table && s.busy === null && (
           <Note tone="warn">지도 건물로 만든 개략 수용가입니다(층수·용도가 없는 건물은 기본값). 관망 초안의 관경·유량은 참고용으로만 보세요.</Note>
         )}
-        {s.busy === '지도 건물 읽는 중…' && <p className="mt-2 text-[11px] text-ink-soft">지도 건물 읽는 중…</p>}
+        {s.busy?.startsWith('지도 건물 읽는 중') && <p className="mt-2 text-[11px] text-ink-soft">{s.busy} 넓은 화면은 구역별로 나눠 받아 합칩니다.</p>}
       </section>
 
       <section className="mt-4 border-t border-line pt-3">

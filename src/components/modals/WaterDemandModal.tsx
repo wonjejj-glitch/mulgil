@@ -84,7 +84,7 @@ export function WaterDemandModal() {
 
   const loadMap = () =>
     run(async () => {
-      const { buildings, partsUsed } = await fetchOsmBuildings(junctions.map((j) => j.position));
+      const { buildings, partsUsed } = await fetchOsmBuildings(junctions.map((j) => j.position), 100, (done, total) => setProgress(total > 1 ? `지도 건물 ${done}/${total} 구역` : ''));
       const est = estimateBuildings(buildings);
       if (est.items.length === 0) throw new Error('이 범위의 지도(OpenStreetMap)에 건물이 없습니다.');
       const c = est.byCategory;

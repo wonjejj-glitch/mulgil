@@ -60,3 +60,25 @@ export function buildingsGeoJson(groups: Iterable<BuildingShape[]>): BuildingFea
   }
   return { type: 'FeatureCollection', features };
 }
+
+/** 경위도 사각형 [서, 남, 동, 북] 의 넓이 (km², 개략). */
+export function boxAreaKm2([w, s, e, n]: [number, number, number, number]): number {
+  const lat = ((s + n) / 2) * (Math.PI / 180);
+  return (e - w) * 111.32 * Math.cos(lat) * ((n - s) * 110.574);
+}
+
+/** 넓은 사각형을 한 조각이 maxKm2 이하가 되도록 고른 격자로 나눈다 (서→동, 남→북 순). */
+export function splitBox(box: [number, number, number, number], maxKm2: number): [number, number, number, number][] {
+  const [w, s, e, n] = box;
+  const lat = ((s + n) / 2) * (Math.PI / 180);
+  const side = Math.sqrt(maxKm2);
+  const nx = Math.max(1, Math.ceil(((e - w) * 111.32 * Math.cos(lat)) / side));
+  const ny = Math.max(1, Math.ceil(((n - s) * 110.574) / side));
+  const out: [number, number, number, number][] = [];
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      out.push([w + ((e - w) * i) / nx, s + ((n - s) * j) / ny, w + ((e - w) * (i + 1)) / nx, s + ((n - s) * (j + 1)) / ny]);
+    }
+  }
+  return out;
+}

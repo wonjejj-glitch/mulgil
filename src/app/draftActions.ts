@@ -91,7 +91,9 @@ export async function loadCustomersFromMap(): Promise<void> {
   store.set({ busy: '지도 건물 읽는 중…', error: null });
   try {
     const [w, s, e, n] = view;
-    const { buildings, partsUsed } = await fetchOsmBuildings([[w, s], [e, n]], 0);
+    const { buildings, partsUsed } = await fetchOsmBuildings([[w, s], [e, n]], 0, (done, total) => {
+      if (total > 1) useDraftStore.getState().set({ busy: `지도 건물 읽는 중… (${done}/${total} 구역)` });
+    });
     const est = estimateBuildings(buildings);
     if (est.items.length === 0) throw new Error('지금 지도 화면 안에 OpenStreetMap 건물이 없습니다. 관망을 만들 지역으로 지도를 옮기고 다시 누르세요.');
     const o = DEFAULT_WATER_DEMAND;

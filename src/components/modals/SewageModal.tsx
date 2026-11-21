@@ -85,7 +85,7 @@ export function SewageModal() {
     setBusy(true);
     setError(null);
     try {
-      const { buildings, partsUsed } = await fetchOsmBuildings([...nodePositions(project).values()]);
+      const { buildings, partsUsed } = await fetchOsmBuildings([...nodePositions(project).values()], 100, (done, total) => setProgress(total > 1 ? `지도 건물 ${done}/${total} 구역` : ''));
       const est = estimateBuildings(buildings);
       if (est.items.length === 0) throw new Error('이 범위의 지도(OpenStreetMap)에 건물이 없습니다. 지도 자료가 비어 있는 지역일 수 있습니다.');
       const c = est.byCategory;
