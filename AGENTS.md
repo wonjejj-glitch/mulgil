@@ -299,3 +299,6 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
 3. Shapefile 내보내기, 관재질(PIP_MOP) 코드 → 조도계수 매핑표
 4. [ENERGY]·[EMITTERS] 편집 UI, 다중 수요 범주([DEMANDS] 여러 줄) 편집
 5. 소화용수 분석의 '가용 소화 유량'(잔류 수압 기준을 만족하는 최대 유량) 이분 탐색
+
+## 엔진 검증
+`.github/workflows/verify-engines.yml`(손으로 실행)이 물길 해석 경로(`src/verify/engineCompare.test.ts`, 평소 테스트에서는 건너뜀)와 공식 엔진(`verify/ref_epanet.py` = OWA-EPANET 2.3·EPA EPANET 2.2 툴킷, `verify/ref_swmm.py` = swmm-toolkit EPA SWMM 5.2.4)을 비교해 `verify/report.py` 로 표를 만든다. 결과와 해설은 `verify/README.md`. 이 PC 는 앱 제어 정책이 swmm-toolkit 의 네이티브 모듈을 막아 SWMM 비교는 CI 에서만 된다.
