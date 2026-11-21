@@ -2,7 +2,7 @@
  * 대화상자 3종: 수용가 CSV → 관망 초안 / 용도지역 분담유량 / 관망 정리 도구.
  */
 import { Crosshair, Download, Eraser, Mountain, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, SquareDashed, TriangleExclamationPoint, Wand2 } from 'lucide-react';
-import { useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   addFillToNetwork,
   clearRoadFiles,
@@ -23,6 +23,7 @@ import {
   setUseKey,
   loadCustomersFromMap,
   startDraftAreaTool,
+  setDraftMode,
   suggestDraftSites,
   applyDraftSite,
   startEraseTool,
@@ -234,9 +235,7 @@ function DraftDialog() {
             <SelectField
               value={s.mode}
               options={[{ value: 'water', label: '상수 (배수관망)' }, { value: 'sewer', label: '하수 (오수 관거)', disabled: s.build === 'fill' }]}
-              onChange={(v) =>
-                s.set({ mode: v as typeof s.mode, maxPipeLength: v === 'sewer' ? 75 : 300, result: null, ...(s.sourceAuto ? { source: null, sourceAuto: false } : {}) })
-              }
+              onChange={(v) => setDraftMode(v as 'water' | 'sewer')}
             />
           </Field>
           <Field label="수용가→도로 최대 거리 (m)" w="w-40">
@@ -475,6 +474,14 @@ function SiteCandidates() {
 
 export function CustomerDraftModal() {
   const open = useUIStore((s) => s.modal === 'draft');
+  const domain = useUIStore((s) => s.domain);
+  // 하수 화면에서 열면 하수, 상수 화면에서 열면 상수로 맞춘다 (보완 모드는 상수만)
+  useEffect(() => {
+    if (!open) return;
+    const d = useDraftStore.getState();
+    if (domain === 'sewer' && d.mode === 'water' && d.build !== 'fill') setDraftMode('sewer');
+    else if (domain === 'water' && d.mode === 'sewer') setDraftMode('water');
+  }, [open, domain]);
   return open ? <DraftDialog /> : null;
 }
 

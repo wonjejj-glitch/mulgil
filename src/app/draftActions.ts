@@ -260,6 +260,20 @@ export function applyDraftSite(index: number | 'booster'): void {
   }
 }
 
+/** 초안 종류(상수·하수)를 바꾼다. 수원·방류구 기준이 반대라 초안·자동 수원·후보는 다시 정한다. */
+export function setDraftMode(mode: 'water' | 'sewer'): void {
+  const s = useDraftStore.getState();
+  if (s.mode === mode) return;
+  s.set({
+    mode,
+    maxPipeLength: mode === 'sewer' ? 75 : 300,
+    result: null,
+    sites: null,
+    water: { ...s.water, sourceHwl: null },
+    ...(s.sourceAuto ? { source: null, sourceAuto: false } : {}),
+  });
+}
+
 export function pickDraftSource(): void {
   useUIStore.getState().setPointPick({
     label: useDraftStore.getState().mode === 'water' ? '수원(배수지·급수 접속점) 위치' : '방류구(처리장·간선 접속점) 위치',
