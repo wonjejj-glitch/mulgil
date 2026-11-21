@@ -13,6 +13,8 @@ export const DATA_GO_KR_KEY: string = (import.meta.env.VITE_DATA_GO_KR_KEY as st
 const ENDPOINT = 'https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo';
 /** 법정동별 표제부 (이 창을 연 동안 다시 받지 않는다) */
 const dongCache = new Map<string, RegisterItem[]>();
+/** 받다가 끊긴 법정동 (받은 쪽까지) */
+const partial = new Map<string, { items: RegisterItem[]; page: number; pages: number }>();
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
 const num = (v: unknown) => Number(v) || 0;
 
@@ -116,20 +118,21 @@ export async function fetchRegisterDong(sigungu: string, bjdong: string, onPage?
     dongCache.set(key, cached);
     return cached;
   }
-  const items: RegisterItem[] = [];
-  let page = 1;
-  let pages: number;
+  // 중간에 실패해도 받은 쪽은 기억해 두고 다음에 이어 받는다
+  const part = partial.get(key) ?? { items: [] as RegisterItem[], page: 1, pages: 1 };
+  partial.set(key, part);
   do {
-    if (page > 1) await new Promise((r) => setTimeout(r, 120)); // 서버를 몰아붙이지 않게 조금씩
-    const r = await fetchDongPageRetry(DATA_GO_KR_KEY, sigungu, bjdong, page);
+    if (part.page > 1) await new Promise((r) => setTimeout(r, 120)); // 서버를 몰아붙이지 않게 조금씩
+    const r = await fetchDongPageRetry(DATA_GO_KR_KEY, sigungu, bjdong, part.page);
     onPage?.();
-    items.push(...r.items);
-    pages = Math.max(1, Math.ceil(r.total / 100));
-    page++;
-  } while (page <= pages);
-  dongCache.set(key, items);
-  storeDong(key, items);
-  return items;
+    part.items.push(...r.items);
+    part.pages = Math.max(1, Math.ceil(r.total / 100));
+    part.page++;
+  } while (part.page <= part.pages);
+  partial.delete(key);
+  dongCache.set(key, part.items);
+  storeDong(key, part.items);
+  return part.items;
 }
 
 export interface RegisterSources {

@@ -79,18 +79,29 @@ async function withRegister(buildings: MapBuilding[], onProgress?: BuildingProgr
   const items: RegisterItem[] = [];
   let pages = 0, done = 0, skipped = 0;
   onProgress?.(0, dongs.length, '건축물대장 법정동');
-  try {
-    for (const d of dongs) {
-      if (pages >= MAX_REGISTER_PAGES) {
-        skipped++;
-        continue;
-      }
-      items.push(...(await fetchRegisterDong(d.slice(0, 5), d.slice(5), () => pages++)));
-      onProgress?.(++done, dongs.length, '건축물대장 법정동');
+  // 한 법정동이 실패해도 나머지는 끝까지 받는다 — 받은 법정동(과 받은 쪽)은 저장돼 있어 '다시 조회'하면 남은 곳만 묻는다.
+  // 대장 값은 모든 법정동을 받았을 때만 쓴다 (일부만 쓰면 범위마다 값이 들쭉날쭉해진다).
+  let failed = 0;
+  let why = '';
+  for (const d of dongs) {
+    if (pages >= MAX_REGISTER_PAGES) {
+      skipped++;
+      continue;
     }
-  } catch (error) {
-    const why = error instanceof Error ? error.message : String(error);
-    return { buildings, failed: true, note: `건축물대장 조회 실패(${why}, 7번 다시 물어도 안 됨) — 세대수는 건물 면적·층수·이름으로만 추정했습니다. 공장·창고도 빠지지 않았으니 잠시 뒤 다시 누르세요.` };
+    try {
+      items.push(...(await fetchRegisterDong(d.slice(0, 5), d.slice(5), () => pages++)));
+    } catch (error) {
+      failed++;
+      why = error instanceof Error ? error.message : String(error);
+    }
+    onProgress?.(++done, dongs.length, '건축물대장 법정동');
+  }
+  if (failed > 0) {
+    return {
+      buildings,
+      failed: true,
+      note: `건축물대장 조회 실패(법정동 ${dongs.length}곳 중 ${failed}곳, ${why}) — 세대수는 건물 면적·층수·이름으로만 추정했습니다. 받은 곳은 저장돼 있으니 잠시 뒤 다시 조회하면 남은 곳만 묻습니다.`,
+    };
   }
   const m = registerOverBuildings(buildings, items);
   const parts = [`건축물대장과 맞춘 건물 ${m.matched.toLocaleString()}동은 실제 세대수를 썼고, 공장·창고 등 ${m.excluded.toLocaleString()}동은 뺐습니다.`];
