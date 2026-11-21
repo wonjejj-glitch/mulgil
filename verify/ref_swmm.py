@@ -28,7 +28,8 @@ def main(inp: str, out_json: str) -> None:
     solver.swmm_run(inp, rpt, out)
     h = output.init()
     output.open(h, out)
-    n_sub, n_node, n_link, _ = output.get_proj_size(h)
+    sizes = output.get_proj_size(h)  # [소유역, 절점, 관로, (시스템), 오염물질]
+    n_node, n_link = sizes[1], sizes[2]
     periods = output.get_times(h, shared_enum.Time.NUM_PERIODS)
     node_ids = [output.get_elem_name(h, ET.NODE, i) for i in range(n_node)]
     link_ids = [output.get_elem_name(h, ET.LINK, i) for i in range(n_link)]
