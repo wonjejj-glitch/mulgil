@@ -34,6 +34,12 @@ interface DraftState {
   businessRatio: number;
   /** 지도 건물을 읽을 범위 [서, 남, 동, 북] (없으면 지금 지도 화면) */
   area: [number, number, number, number] | null;
+  /** 지도 도구: 'area' 끌어서 범위 그리기 / 'erase' 수용가 빼기 (도구를 쓰는 동안 대화상자는 닫힌다) */
+  mapTool: 'area' | 'erase' | null;
+  /** 뺀 수용가 묶음 (되돌리기용, 마지막이 가장 최근) */
+  removed: Customer[][];
+  /** 직접 뺀 수용가 ID — 지도 건물을 다시 읽어도 넣지 않는다 */
+  excluded: string[];
   water: WaterDraftOptions;
   sewer: SewerDraftOptions;
   result: DraftResult | null;
@@ -74,6 +80,9 @@ export const useDraftStore = create<DraftState>()((set) => ({
   maxPipeLength: 300,
   businessRatio: 30,
   area: null,
+  mapTool: null,
+  removed: [],
+  excluded: [],
   water: { ...DEFAULT_WATER_DRAFT },
   sewer: { ...DEFAULT_SEWER_DRAFT },
   result: null,

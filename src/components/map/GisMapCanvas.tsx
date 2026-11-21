@@ -27,6 +27,7 @@ import { SEWER_TOOLS, useUIStore, type Selection, type Tool } from '../../store/
 import { midpointOfPath, wgs84ToEpsg } from '../../utils/geoMath';
 import { useDraftStore } from '../../store/useDraftStore';
 import { BUILDINGS_MIN_ZOOM, buildMapStyle } from './basemaps';
+import { DraftMapTool } from './DraftMapTool';
 import { VworldBuildings } from './VworldBuildings';
 import { buildDraftLayers } from './draftLayers';
 import { ColorRampLegend } from './ColorRampLegend';
@@ -438,6 +439,7 @@ export function GisMapCanvas() {
   const onMouseDown = useCallback(
     (event: MapLayerMouseEvent) => {
       suppressClick.current = false;
+      if (useDraftStore.getState().mapTool) return; // 관망 초안 지도 도구(범위·수용가 빼기)가 처리한다
       const original = event.originalEvent;
       if (useSwmmStore.getState().project) return; // SWMM 보기는 읽기 전용: 절점 끌어 이동 없음
       if (original.button !== 0 || useUIStore.getState().tool !== 'select') return;
@@ -527,6 +529,7 @@ export function GisMapCanvas() {
         suppressClick.current = false;
         return;
       }
+      if (useDraftStore.getState().mapTool) return;
       const pointPick = useUIStore.getState().pointPick;
       if (pointPick) {
         pointPick.onPick([event.lngLat.lng, event.lngLat.lat]);
@@ -875,8 +878,10 @@ export function GisMapCanvas() {
     };
   }, [mapReady, deckEpoch]);
   const onHover = useCallback((info: PickingInfo) => setHovering(Boolean(info.object)), []);
+  const getMapForTool = useCallback(() => mapRef.current?.getMap() ?? null, []);
+  const draftTool = useDraftStore((s) => s.mapTool);
 
-  const cursorStyle = dragging ? 'grabbing' : tool !== 'select' || pointPick ? 'crosshair' : hovering ? 'pointer' : 'grab';
+  const cursorStyle = dragging ? 'grabbing' : draftTool || tool !== 'select' || pointPick ? 'crosshair' : hovering ? 'pointer' : 'grab';
   const hint = pointPick ? `${pointPick.label} — 지도를 클릭하세요 · Esc 취소` : TOOL_HINTS[tool];
 
   return (
@@ -914,6 +919,7 @@ export function GisMapCanvas() {
         <ScaleControl position="bottom-right" unit="metric" style={{ marginBottom: 34 }} />
         <DrawingOverlay />
       </Map>
+      <DraftMapTool getMap={getMapForTool} />
       {hint && (
         <div className="pointer-events-none absolute left-3 top-3 z-10 w-max max-w-[min(34rem,calc(100%-4.5rem))] rounded-md border border-line bg-panel/95 px-3 py-1.5 text-xs leading-relaxed text-ink-soft shadow-lg">
           {hint}

@@ -1,7 +1,7 @@
 /**
  * 대화상자 3종: 수용가 CSV → 관망 초안 / 용도지역 분담유량 / 관망 정리 도구.
  */
-import { Crosshair, Download, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, SquareDashed, TriangleExclamationPoint, Wand2 } from 'lucide-react';
+import { Crosshair, Download, Eraser, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, SquareDashed, TriangleExclamationPoint, Wand2 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
   addFillToNetwork,
@@ -22,7 +22,9 @@ import {
   sendSewerDraft,
   setUseKey,
   loadCustomersFromMap,
-  pickDraftArea,
+  startDraftAreaTool,
+  startEraseTool,
+  restoreErased,
   clearDraftArea,
 } from '../../app/draftActions';
 import type { ColumnMapping, DemandUnit } from '../../core/io/customerCsv';
@@ -108,7 +110,7 @@ function DraftDialog() {
             <MapIcon size={13} />
             {s.area ? '지정 범위의 건물로 만들기 (개략)' : '지도 화면의 건물로 만들기 (개략)'}
           </Button>
-          <Button disabled={s.busy !== null} onClick={pickDraftArea} title="지도에서 두 모서리를 찍어 건물을 읽을 범위를 네모로 정합니다. 정하면 바로 그 안의 건물로 수용가를 만듭니다">
+          <Button disabled={s.busy !== null} onClick={startDraftAreaTool} title="지도를 누른 채 끌어 건물을 읽을 범위를 네모로 그립니다. 그리면 바로 그 안의 건물로 수용가를 만듭니다">
             <SquareDashed size={13} />
             범위 네모로 지정
           </Button>
@@ -144,7 +146,7 @@ function DraftDialog() {
             </span>
           )}
         </div>
-        <Note>수용가 자료가 없으면 ‘범위 네모로 지정’으로 지도에서 두 모서리를 찍거나(없으면 지금 지도 화면 전체) ‘건물로 만들기’를 누르세요 — 건축물대장 세대수(없으면 건물 면적·층수)로 가정용수를, 가정용수 × 영업·업무 비율로 상가·업무 용수를 잡습니다. 공장·창고는 뺍니다(참고용). 영업·업무 비율을 바꾸면 다시 누르세요.</Note>
+        <Note>수용가 자료가 없으면 ‘범위 네모로 지정’을 누르고 지도를 누른 채 끌어 네모를 그리거나(없으면 지금 지도 화면 전체) ‘건물로 만들기’를 누르세요 — 건축물대장 세대수(없으면 건물 면적·층수)로 가정용수를, 가정용수 × 영업·업무 비율로 상가·업무 용수를 잡습니다. 공장·창고는 뺍니다(참고용). 영업·업무 비율을 바꾸면 다시 누르세요.</Note>
         <Note>요금·급수 대장에서 내려받은 표를 그대로 넣으세요. 열: 수용가 번호, X(경도)·Y(위도) 또는 평면 좌표, 사용량. 엑셀은 ‘CSV(쉼표로 분리)’로 저장합니다. 주소만 있는 자료는 먼저 좌표로 바꿔야 합니다.</Note>
         {s.table && s.mapping && (
           <div className="mt-2 flex flex-wrap items-end gap-2">
@@ -177,6 +179,22 @@ function DraftDialog() {
             수용가 {s.customers.length.toLocaleString()}곳 · 사용량 합 {totalDemand.toFixed(1)} m³/일 ({(totalDemand / 86.4).toFixed(2)} L/s) · 좌표계 {s.crsLabel}
             {s.skipped.length > 0 && ` · 좌표·사용량을 못 읽은 줄 ${s.skipped.length}개 (${s.skipped.slice(0, 6).join(', ')}${s.skipped.length > 6 ? ' …' : ''})`}
           </p>
+        )}
+        {s.customers.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <Button disabled={s.busy !== null} onClick={startEraseTool} title="지도에서 필요 없는 수용가를 뺍니다 — 클릭하면 한 곳, 끌면 네모 안 전부. 되돌리기 가능">
+              <Eraser size={13} />
+              수용가 빼기 (지도에서)
+            </Button>
+            {s.excluded.length > 0 && (
+              <span className="text-[11px] text-ink-soft">
+                직접 뺀 {s.excluded.length.toLocaleString()}곳{' '}
+                <button type="button" className="text-accent underline" onClick={restoreErased}>
+                  뺀 수용가 되살리기
+                </button>
+              </span>
+            )}
+          </div>
         )}
         {s.customers.length > 0 && !s.table && s.busy === null && (
           <Note tone="warn">지도 건물로 만든 개략 수용가입니다(층수·용도가 없는 건물은 기본값). 관망 초안의 관경·유량은 참고용으로만 보세요.</Note>

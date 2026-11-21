@@ -64,6 +64,9 @@ export function applyCustomerMapping(patch?: { mapping?: ColumnMapping; crs?: Im
     const outside = customers.filter((c) => c.position[0] < 124 || c.position[0] > 132 || c.position[1] < 33 || c.position[1] > 39.5).length;
     store.set({
       customers,
+      // 새 수용가 파일: 앞서 뺀 목록은 다른 자료의 것이므로 비운다
+      removed: [],
+      excluded: [],
       skipped,
       crsLabel: resolved.label,
       result: null,
@@ -101,13 +104,17 @@ export async function loadCustomersFromMap(): Promise<void> {
       est.items.map((b) => ({ id: b.id, position: b.position, households: b.households, business: b.category === '비주거' })),
       { ...o, businessRatio: store.businessRatio },
     );
-    const customers: Customer[] = priced.map((b) => ({ id: b.id, position: b.position, demand: b.demand ?? 0 }));
+    const excluded = new Set(store.excluded);
+    const all: Customer[] = priced.map((b) => ({ id: b.id, position: b.position, demand: b.demand ?? 0 }));
+    const customers = all.filter((c) => !excluded.has(c.id));
+    const dropped = all.length - customers.length;
     const c = est.byCategory;
     useDraftStore.getState().set({
       table: null,
       mapping: null,
       fileName: '',
       customers,
+      removed: [],
       skipped: [],
       crsLabel: 'WGS84 경위도 (지도)',
       result: null,
@@ -115,6 +122,7 @@ export async function loadCustomersFromMap(): Promise<void> {
         `${BUILDING_SOURCE_LABEL[source]} ${est.items.length.toLocaleString()}동으로 만든 개략 수용가입니다 — 공동주택 ${c.공동주택.count}동, 단독 ${c.단독주택.count}동, 용도 미상 ${c['용도 미상'].count}동, 비주거 ${c.비주거.count}동. ` +
           `층수 자료 있는 건물 ${est.floorsKnown}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}). 가정용 = 세대수 × ${o.personsPerHousehold}인 × ${o.litersPerCapita} L, 영업·업무용 = 가정용 × ${store.businessRatio}% 를 상가·업무 건물에 연면적 비율로 (예시 원단위).`,
         ...(note ? [note] : []),
+        ...(dropped > 0 ? [`직접 뺀 수용가 ${dropped.toLocaleString()}곳은 넣지 않았습니다 (‘뺀 수용가 되살리기’로 되돌릴 수 있음).`] : []),
       ],
     });
   } catch (e) {
@@ -124,32 +132,67 @@ export async function loadCustomersFromMap(): Promise<void> {
   }
 }
 
-/**
- * 지도에서 두 모서리를 찍어 건물을 읽을 네모 범위를 정한다. 정하면 그 안의 건물로 수용가를 다시 만든다.
- * (점 찍기는 한 번 찍으면 끝나므로, 첫 모서리를 찍은 뒤 다음 틱에 두 번째 찍기를 다시 건다.)
- */
-export function pickDraftArea(): void {
-  useUIStore.getState().setPointPick({
-    label: '범위의 첫 번째 모서리',
-    returnTo: 'draft',
-    onPick: (a) => {
-      window.setTimeout(() => {
-        useUIStore.getState().setPointPick({
-          label: '범위의 반대쪽 모서리',
-          returnTo: 'draft',
-          onPick: (b) => {
-            const area: [number, number, number, number] = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
-            if (area[2] - area[0] < 1e-5 || area[3] - area[1] < 1e-5) {
-              useDraftStore.getState().set({ error: '두 모서리가 너무 가깝습니다. 범위를 다시 정하세요.' });
-              return;
-            }
-            useDraftStore.getState().set({ area, result: null, error: null });
-            void loadCustomersFromMap();
-          },
-        });
-      }, 0);
-    },
+/** 지도에서 누른 채 끌어 네모 범위를 그린다 (components/map/DraftMapTool). */
+export function startDraftAreaTool(): void {
+  useDraftStore.getState().set({ mapTool: 'area', error: null });
+  useUIStore.getState().openModal(null);
+}
+
+/** 지도에서 수용가를 클릭·네모로 뺀다. */
+export function startEraseTool(): void {
+  if (useDraftStore.getState().customers.length === 0) return;
+  useDraftStore.getState().set({ mapTool: 'erase', error: null });
+  useUIStore.getState().openModal(null);
+}
+
+/** 지도 도구를 끝내고 대화상자로 돌아간다. */
+export function finishDraftTool(): void {
+  useDraftStore.getState().set({ mapTool: null });
+  useUIStore.getState().openModal('draft');
+}
+
+/** 끌어서 그린 범위 [서, 남, 동, 북] 를 정하고, 그 안의 건물로 수용가를 만든다. */
+export function applyDraftArea(area: [number, number, number, number]): void {
+  if (area[2] - area[0] < 1e-5 || area[3] - area[1] < 1e-5) return;
+  useDraftStore.getState().set({ area, result: null, error: null, mapTool: null });
+  useUIStore.getState().openModal('draft');
+  void loadCustomersFromMap();
+}
+
+/** 수용가를 뺀다 (한 번에 뺀 묶음은 되돌리기 한 번으로 돌아온다). 초안은 다시 만들어야 한다. */
+export function eraseCustomers(ids: string[]): void {
+  const s = useDraftStore.getState();
+  const drop = new Set(ids);
+  const batch = s.customers.filter((c) => drop.has(c.id));
+  if (batch.length === 0) return;
+  s.set({
+    customers: s.customers.filter((c) => !drop.has(c.id)),
+    removed: [...s.removed, batch],
+    excluded: [...new Set([...s.excluded, ...batch.map((c) => c.id)])],
+    result: null,
   });
+}
+
+/** 마지막으로 뺀 묶음을 되살린다. */
+export function undoErase(): void {
+  const s = useDraftStore.getState();
+  const batch = s.removed[s.removed.length - 1];
+  if (!batch) return;
+  const back = new Set(batch.map((c) => c.id));
+  s.set({
+    customers: [...s.customers, ...batch],
+    removed: s.removed.slice(0, -1),
+    excluded: s.excluded.filter((id) => !back.has(id)),
+    result: null,
+  });
+}
+
+/** 직접 뺀 수용가를 모두 되살린다. */
+export function restoreErased(): void {
+  const s = useDraftStore.getState();
+  const present = new Set(s.customers.map((c) => c.id));
+  const back = s.removed.flat().filter((c) => !present.has(c.id));
+  s.set({ customers: [...s.customers, ...back], removed: [], excluded: [], result: null });
 }
 
 /** 네모 범위를 지우고 다시 지도 화면 전체를 쓴다. */

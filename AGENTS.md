@@ -305,3 +305,6 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
 
 ## 국내 자료 우선
 도로(`app/osmRoads.ts` `fetchRoads`): 넣은 파일 → 브이월드 `LT_L_N3A0020000`(수치지도 1:5,000 도로중심선, 0.01° 칸별 JSONP) → Overpass(OSM). 캐시 DB 는 'mulgil-roads-2'(출처 포함). 건물: 브이월드 → OSM. 배경지도 기본값: 키가 있으면 'vworld-base'(저장 형식 v2, 예전 기본값 'osm' 은 한 번 바꿈). 지형 높이(`core/terrain/elevation.ts`)는 아직 AWS Terrarium 타일 — 국내 공개 DEM 타일 API 가 없어서.
+
+## 관망 초안 지도 도구
+`components/map/DraftMapTool.tsx`: `useDraftStore.mapTool` 이 'area'(끌어서 네모 → `applyDraftArea`) 또는 'erase'(클릭 12 px 안 가장 가까운 수용가 / 끌기 네모 안 전부 → `eraseCustomers`, Ctrl+Z `undoErase`)이면 지도 끌기를 끄고 캔버스 mousedown 을 가로챈다. GisMapCanvas 의 onMouseDown·onClick 은 도구 중엔 무시. 뺀 ID 는 `excluded` 로 남아 지도 건물을 다시 읽어도 빠지고, CSV 를 새로 읽으면 비운다.
