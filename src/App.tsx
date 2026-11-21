@@ -252,7 +252,10 @@ function EmptyState() {
   const empty = useNetworkStore((s) => isEmptyRecord(s.model.nodes));
   const tool = useUIStore((s) => s.tool);
   const swmmOpen = useSwmmStore((s) => s.project !== null);
-  const picking = useUIStore((s) => s.pointPick !== null);
+  // 점 찍기·관망 초안 지도 도구(범위 그리기·수용가 빼기) 중에는 카드가 지도를 가리지 않게 숨긴다
+  const pointPicking = useUIStore((s) => s.pointPick !== null);
+  const toolActive = useDraftStore((s) => s.mapTool !== null);
+  const picking = pointPicking || toolActive;
   const drafting = useDraftStore((s) => s.overlay && s.customers.length > 0);
   const sewer = useUIStore((s) => s.domain === 'sewer');
   const sewerEmpty = useSewerStore((s) => s.project.nodes.length === 0);
