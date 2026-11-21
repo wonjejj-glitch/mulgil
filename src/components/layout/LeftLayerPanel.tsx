@@ -1,11 +1,11 @@
 import { Eye, EyeOff } from 'lucide-react';
 import { VworldKeyLink } from '../ui/DataLinks';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { alignNetworkToRoads, reprojectModel } from '../../app/actions';
 import { unitLabels } from '../../core/model/units';
 import { useNetworkStore } from '../../store/useNetworkStore';
 import { useSimulationStore } from '../../store/useSimulationStore';
-import { useUIStore, type LayerVisibility } from '../../store/useUIStore';
+import { BUILT_IN_VWORLD_KEY, useUIStore, type LayerVisibility } from '../../store/useUIStore';
 import { CRS_DEFS, type ImportCrsChoice } from '../../utils/geoMath';
 import { BASEMAP_OPTIONS } from '../map/basemaps';
 import { LINK_THEME_OPTIONS, NODE_THEME_OPTIONS } from '../map/thematic';
@@ -61,6 +61,9 @@ export function LeftLayerPanel() {
   const setBasemap = useUIStore((s) => s.setBasemap);
   const vworldKey = useUIStore((s) => s.vworldKey);
   const setVworldKey = useUIStore((s) => s.setVworldKey);
+  // 공용 기본 키는 화면에 보이지 않게 한다 (화면 녹화·발표 자료에 키가 찍히지 않도록). 사용자가 넣은 자기 키만 보여 준다.
+  const usingBuiltIn = vworldKey !== '' && vworldKey === BUILT_IN_VWORLD_KEY;
+  const [editingKey, setEditingKey] = useState(false);
   const nodeTheme = useUIStore((s) => s.nodeTheme);
   const linkTheme = useUIStore((s) => s.linkTheme);
   const setNodeTheme = useUIStore((s) => s.setNodeTheme);
@@ -181,9 +184,42 @@ export function LeftLayerPanel() {
         </div>
         {needsKey && (
           <div className="mt-2">
-            <FieldRow label="인증키">
-              <TextField value={vworldKey} placeholder="브이월드 API 키" onCommit={(value) => setVworldKey(value)} />
-            </FieldRow>
+            {usingBuiltIn && !editingKey ? (
+              <div className="flex items-center gap-2 px-1.5 text-xs text-ink-soft">
+                <span className="w-12 shrink-0">인증키</span>
+                <span className="min-w-0 flex-1 truncate">기본 키 사용 중</span>
+                <button type="button" className="shrink-0 text-[11px] text-accent hover:underline" onClick={() => setEditingKey(true)}>
+                  내 키 넣기
+                </button>
+              </div>
+            ) : (
+              <>
+                <FieldRow label="인증키">
+                  <TextField
+                    value={usingBuiltIn ? '' : vworldKey}
+                    placeholder="브이월드 API 키"
+                    onCommit={(value) => {
+                      if (value) setVworldKey(value);
+                      else if (BUILT_IN_VWORLD_KEY) setVworldKey(BUILT_IN_VWORLD_KEY);
+                      else setVworldKey('');
+                      setEditingKey(false);
+                    }}
+                  />
+                </FieldRow>
+                {BUILT_IN_VWORLD_KEY && (
+                  <button
+                    type="button"
+                    className="mt-1 px-1.5 text-[11px] text-accent hover:underline"
+                    onClick={() => {
+                      setVworldKey(BUILT_IN_VWORLD_KEY);
+                      setEditingKey(false);
+                    }}
+                  >
+                    기본 키로 되돌리기
+                  </button>
+                )}
+              </>
+            )}
             {!vworldKey && (
               <p className="mt-1 text-[11px] text-ink-muted">
                 브이월드(vworld.kr) 오픈API 인증키를 입력하면 배경지도가 표시됩니다. 키는 이 브라우저에만 저장됩니다.

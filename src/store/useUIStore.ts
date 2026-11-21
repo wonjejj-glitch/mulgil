@@ -3,7 +3,8 @@ import type { LinkType, LngLat } from '../core/model/types';
 import type { BBox, ImportCrsChoice } from '../utils/geoMath';
 
 /** 배포 때 넣은 브이월드 키 (GitHub 저장소 Secrets 의 VITE_VWORLD_KEY). 사용자가 왼쪽 패널에 넣은 키가 있으면 그것이 먼저다. */
-const BUILT_IN_VWORLD_KEY: string = (import.meta.env.VITE_VWORLD_KEY as string | undefined) ?? '';
+/** 배포 때 넣은 공용 브이월드 키 (화면에는 보이지 않게 한다 — LeftLayerPanel). */
+export const BUILT_IN_VWORLD_KEY: string = (import.meta.env.VITE_VWORLD_KEY as string | undefined) ?? '';
 
 export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve' | 'manhole' | 'outfall' | 'conduit' | 'catchment';
 /** 작업 영역: 상수(EPANET 관망) / 하수(useSewerStore 의 하수 프로젝트). */
