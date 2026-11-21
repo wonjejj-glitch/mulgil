@@ -8,7 +8,7 @@ import { DATA_GO_KR_KEY, registerHouseholdsAlong } from '../../app/buildingRegis
 import { BUILDING_SOURCE_LABEL, fetchMapBuildings } from '../../app/mapBuildings';
 import { linkPath } from '../../core/model/networkEdit';
 import { readSewageFiles } from '../../app/sewageImport';
-import { assignWaterDemand, DEFAULT_WATER_DEMAND, estimateBuildings, type DemandSource, type WaterDemandOptions } from '../../core/model/buildingEstimate';
+import { applyBusinessRatio, assignWaterDemand, DEFAULT_WATER_DEMAND, estimateBuildings, type DemandSource, type WaterDemandOptions } from '../../core/model/buildingEstimate';
 import { m3dToFlowUnits } from '../../core/model/landUse';
 import { xyToLngLat } from '../../core/sewer/mapFrame';
 import { useNetworkStore } from '../../store/useNetworkStore';
@@ -76,7 +76,13 @@ export function WaterDemandModal() {
       if (paths.length === 0) throw new Error('관로가 없습니다.');
       const r = await registerHouseholdsAlong(paths, setProgress);
       if (r.lots.length === 0) throw new Error('관로 주변 필지에서 건축물대장 건물을 찾지 못했습니다.');
-      setSources(r.lots.map((l) => ({ id: l.pnu, position: l.center, households: l.households })));
+      // 필지마다 가정(세대수)과 상가·업무(연면적 환산 = 영업·업무용수를 나누는 무게)를 따로 둔다
+      setSources(
+        r.lots.flatMap((l): DemandSource[] => [
+          ...(l.residential > 0 ? [{ id: l.pnu, position: l.center, households: l.residential, business: false }] : []),
+          ...(l.nonResidentialEquiv > 0 ? [{ id: `${l.pnu}_업무`, position: l.center, households: l.nonResidentialEquiv, business: true }] : []),
+        ]),
+      );
       setLabels([r.label]);
       setFromMap(false);
       setProgress('');
@@ -89,12 +95,12 @@ export function WaterDemandModal() {
       if (est.items.length === 0) throw new Error(`이 범위에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다.`);
       const c = est.byCategory;
       const fmt = (k: keyof typeof c) => `${k} ${c[k].count.toLocaleString()}동 ≈ ${Math.round(c[k].households).toLocaleString()}세대`;
-      setSources(est.items.map((b) => ({ id: b.id, position: b.position, households: b.households })));
+      setSources(est.items.map((b) => ({ id: b.id, position: b.position, households: b.households, business: b.category === '비주거' })));
       setLabels([`${BUILDING_SOURCE_LABEL[source]} ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산) · 층수 자료 있는 건물 ${est.floorsKnown.toLocaleString()}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}), 나머지는 기본 층수`, ...(note ? [note] : [])]);
       setFromMap(true);
     });
 
-  const result = useMemo(() => (sources ? assignWaterDemand(junctions, sources, o) : null), [sources, junctions, o]);
+  const result = useMemo(() => (sources ? assignWaterDemand(junctions, applyBusinessRatio(sources, o), o) : null), [sources, junctions, o]);
 
   const apply = () => {
     if (!result) return;
@@ -203,15 +209,16 @@ export function WaterDemandModal() {
                 ['litersPerCapita', '1인 1일 급수량 (L)', 10],
                 ['defaultHouseholds', '자료 없을 때 세대수', 1],
                 ['maxDistance', '절점 찾는 거리 (m)', 10],
+                ['businessRatio', '영업·업무용 (가정용 대비 %)', 5],
               ] as const
             ).map(([key, label, step]) => (
               <label key={key}>
                 <span className="text-[11px] text-ink-muted">{label}</span>
-                <NumberField value={o[key]} min={0} step={step} onCommit={(v) => setO((p) => ({ ...p, [key]: Math.max(0.01, v) }))} />
+                <NumberField value={o[key]} min={0} step={step} onCommit={(v) => setO((p) => ({ ...p, [key]: key === 'businessRatio' ? Math.max(0, v) : Math.max(0.01, v) }))} />
               </label>
             ))}
           </div>
-          <p className="mt-1 text-[11px] text-ink-muted">기본 수요량은 일평균으로 넣습니다. 시간 변동은 수요 패턴, 시간최대 검토는 아래 ‘시간최대계수’ 탭을 쓰세요. 원단위는 예시이니 수도정비기본계획 값으로 바꾸세요.</p>
+          <p className="mt-1 text-[11px] text-ink-muted">기본 수요량은 일평균으로 넣습니다. 시간 변동은 수요 패턴, 시간최대 검토는 아래 ‘시간최대계수’ 탭을 쓰세요. 원단위는 예시이니 수도정비기본계획 값으로 바꾸세요. 건축물대장·지도 건물로 넣을 때 상가·업무시설은 세대로 세지 않고, 영업·업무용수를 가정용수 × 위 비율로 잡아 상가·업무 건물에 연면적 비율로 나눕니다(공장·창고는 뺌).</p>
         </section>
 
         {result && (

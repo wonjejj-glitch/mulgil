@@ -191,6 +191,11 @@ export interface DemandSource {
   /** 사용량 m³/일 */
   demand?: number;
   households?: number;
+  /**
+   * 상가·업무 건물이면 true (가정이면 false). 정해져 있으면 applyBusinessRatio 가 영업·업무용수를
+   * 가정용수 × 비율로 잡아 이 건물들에 나눈다 — households 는 그때 나누는 무게(연면적 환산)로만 쓴다.
+   */
+  business?: boolean;
 }
 
 export interface WaterDemandOptions {
@@ -201,9 +206,43 @@ export interface WaterDemandOptions {
   defaultHouseholds: number;
   /** 가장 가까운 절점을 찾을 최대 거리 (m) */
   maxDistance: number;
+  /**
+   * 영업·업무용수 = 가정용수 × 이 비율(%). 수도정비기본계획은 업종별 용수를 가정용수에 대한 비율로 잡는 일이 많다.
+   * 기본값은 예시 (전국 상수도 통계의 영업+업무 / 가정 사용량 비는 대략 30~45%). 사업 기본계획 값으로 바꿔 쓴다.
+   */
+  businessRatio: number;
 }
 
-export const DEFAULT_WATER_DEMAND: WaterDemandOptions = { personsPerHousehold: 2.3, litersPerCapita: 330, defaultHouseholds: 1, maxDistance: 150 };
+export const DEFAULT_WATER_DEMAND: WaterDemandOptions = { personsPerHousehold: 2.3, litersPerCapita: 330, defaultHouseholds: 1, maxDistance: 150, businessRatio: 30 };
+
+/**
+ * 영업·업무용수를 가정용수 × 비율로 잡는다 (사용량이 정해진 수용가는 그대로).
+ *  - 가정(business=false): 세대수 × 세대당 인원 × 1인 1일 급수량
+ *  - 상가·업무(business=true): 가정용수 합 × 비율 을 상가·업무 건물에 무게(households = 연면적 환산) 비율로 나눈다.
+ *    상가·업무 건물이 하나도 없으면 가정 쪽에 비율만큼 얹는다.
+ * business 가 정해지지 않은 수용가는 바꾸지 않는다 (CSV·SHP 처럼 사용량·세대수를 그대로 쓰는 자료).
+ */
+export function applyBusinessRatio(sources: DemandSource[], options: Partial<WaterDemandOptions> = {}): DemandSource[] {
+  const o = { ...DEFAULT_WATER_DEMAND, ...options };
+  const perHousehold = (o.personsPerHousehold * o.litersPerCapita) / 1000;
+  const free = (s: DemandSource) => s.business !== undefined && !(s.demand !== undefined && s.demand > 0);
+  let home = 0, weight = 0;
+  for (const s of sources) {
+    if (!free(s)) continue;
+    if (s.business) weight += Math.max(0, s.households ?? 0);
+    else home += Math.max(0, s.households ?? 0) * perHousehold;
+  }
+  const business = (home * Math.max(0, o.businessRatio)) / 100;
+  const homeScale = weight > 0 ? 1 : 1 + Math.max(0, o.businessRatio) / 100;
+  return sources.flatMap((s): DemandSource[] => {
+    if (!free(s)) return [s];
+    if (s.business) {
+      if (weight <= 0) return [];
+      return [{ ...s, households: 0, demand: (business * Math.max(0, s.households ?? 0)) / weight }];
+    }
+    return [{ ...s, demand: Math.max(0, s.households ?? 0) * perHousehold * homeScale }];
+  });
+}
 
 export interface WaterDemandResult {
   /** 절점 ID → 일평균 m³/일 */

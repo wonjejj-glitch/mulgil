@@ -25,7 +25,7 @@ import { readBackup } from './autoBackup';
 import { getViewBounds } from './mapView';
 import { BUILDING_SOURCE_LABEL, fetchMapBuildings } from './mapBuildings';
 import { fetchOsmRoads, setUserRoads } from './osmRoads';
-import { DEFAULT_WATER_DEMAND, estimateBuildings } from '../core/model/buildingEstimate';
+import { applyBusinessRatio, DEFAULT_WATER_DEMAND, estimateBuildings } from '../core/model/buildingEstimate';
 import { sampleTerrainTiles } from './terrainFetch';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -83,7 +83,7 @@ export function applyCustomerMapping(patch?: { mapping?: ColumnMapping; crs?: Im
 export async function loadCustomersFromMap(): Promise<void> {
   const store = useDraftStore.getState();
   if (store.busy) return;
-  const view = getViewBounds();
+  const view = store.area ?? getViewBounds();
   if (!view) {
     store.set({ error: '지도 화면 범위를 알 수 없습니다. 지도를 한 번 움직인 뒤 다시 누르세요.' });
     return;
@@ -97,7 +97,11 @@ export async function loadCustomersFromMap(): Promise<void> {
     const est = estimateBuildings(buildings);
     if (est.items.length === 0) throw new Error(`지금 지도 화면 안에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다. 관망을 만들 지역으로 지도를 옮기고 다시 누르세요.`);
     const o = DEFAULT_WATER_DEMAND;
-    const customers: Customer[] = est.items.map((b) => ({ id: b.id, position: b.position, demand: (b.households * o.personsPerHousehold * o.litersPerCapita) / 1000 }));
+    const priced = applyBusinessRatio(
+      est.items.map((b) => ({ id: b.id, position: b.position, households: b.households, business: b.category === '비주거' })),
+      { ...o, businessRatio: store.businessRatio },
+    );
+    const customers: Customer[] = priced.map((b) => ({ id: b.id, position: b.position, demand: b.demand ?? 0 }));
     const c = est.byCategory;
     useDraftStore.getState().set({
       table: null,
@@ -109,7 +113,7 @@ export async function loadCustomersFromMap(): Promise<void> {
       result: null,
       warnings: [
         `${BUILDING_SOURCE_LABEL[source]} ${est.items.length.toLocaleString()}동으로 만든 개략 수용가입니다 — 공동주택 ${c.공동주택.count}동, 단독 ${c.단독주택.count}동, 용도 미상 ${c['용도 미상'].count}동, 비주거 ${c.비주거.count}동. ` +
-          `층수 자료 있는 건물 ${est.floorsKnown}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}). 사용량 = 세대수 × ${o.personsPerHousehold}인 × ${o.litersPerCapita} L (예시 원단위).`,
+          `층수 자료 있는 건물 ${est.floorsKnown}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}). 가정용 = 세대수 × ${o.personsPerHousehold}인 × ${o.litersPerCapita} L, 영업·업무용 = 가정용 × ${store.businessRatio}% 를 상가·업무 건물에 연면적 비율로 (예시 원단위).`,
         ...(note ? [note] : []),
       ],
     });
@@ -118,6 +122,39 @@ export async function loadCustomersFromMap(): Promise<void> {
   } finally {
     useDraftStore.getState().set({ busy: null });
   }
+}
+
+/**
+ * 지도에서 두 모서리를 찍어 건물을 읽을 네모 범위를 정한다. 정하면 그 안의 건물로 수용가를 다시 만든다.
+ * (점 찍기는 한 번 찍으면 끝나므로, 첫 모서리를 찍은 뒤 다음 틱에 두 번째 찍기를 다시 건다.)
+ */
+export function pickDraftArea(): void {
+  useUIStore.getState().setPointPick({
+    label: '범위의 첫 번째 모서리',
+    returnTo: 'draft',
+    onPick: (a) => {
+      window.setTimeout(() => {
+        useUIStore.getState().setPointPick({
+          label: '범위의 반대쪽 모서리',
+          returnTo: 'draft',
+          onPick: (b) => {
+            const area: [number, number, number, number] = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])];
+            if (area[2] - area[0] < 1e-5 || area[3] - area[1] < 1e-5) {
+              useDraftStore.getState().set({ error: '두 모서리가 너무 가깝습니다. 범위를 다시 정하세요.' });
+              return;
+            }
+            useDraftStore.getState().set({ area, result: null, error: null });
+            void loadCustomersFromMap();
+          },
+        });
+      }, 0);
+    },
+  });
+}
+
+/** 네모 범위를 지우고 다시 지도 화면 전체를 쓴다. */
+export function clearDraftArea(): void {
+  useDraftStore.getState().set({ area: null });
 }
 
 export function pickDraftSource(): void {

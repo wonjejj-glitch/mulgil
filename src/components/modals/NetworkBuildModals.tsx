@@ -1,7 +1,7 @@
 /**
  * 대화상자 3종: 수용가 CSV → 관망 초안 / 용도지역 분담유량 / 관망 정리 도구.
  */
-import { Crosshair, Download, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, TriangleExclamationPoint, Wand2 } from 'lucide-react';
+import { Crosshair, Download, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, SquareDashed, TriangleExclamationPoint, Wand2 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
   addFillToNetwork,
@@ -22,6 +22,8 @@ import {
   sendSewerDraft,
   setUseKey,
   loadCustomersFromMap,
+  pickDraftArea,
+  clearDraftArea,
 } from '../../app/draftActions';
 import type { ColumnMapping, DemandUnit } from '../../core/io/customerCsv';
 import { formatLngLat, type ImportCrsChoice } from '../../utils/geoMath';
@@ -102,10 +104,29 @@ function DraftDialog() {
             <FileUp size={13} />
             CSV 파일 열기
           </Button>
-          <Button disabled={s.busy !== null} onClick={() => void loadCustomersFromMap()} title="수용가 자료가 없을 때: 지금 지도 화면 안의 건물(브이월드, 안 되면 OpenStreetMap)로 개략 수용가를 만듭니다">
+          <Button disabled={s.busy !== null} onClick={() => void loadCustomersFromMap()} title="수용가 자료가 없을 때: 지정한 네모 범위(없으면 지금 지도 화면) 안의 건물(브이월드, 안 되면 OpenStreetMap)로 개략 수용가를 만듭니다">
             <MapIcon size={13} />
-            지도 화면의 건물로 만들기 (개략)
+            {s.area ? '지정 범위의 건물로 만들기 (개략)' : '지도 화면의 건물로 만들기 (개략)'}
           </Button>
+          <Button disabled={s.busy !== null} onClick={pickDraftArea} title="지도에서 두 모서리를 찍어 건물을 읽을 범위를 네모로 정합니다. 정하면 바로 그 안의 건물로 수용가를 만듭니다">
+            <SquareDashed size={13} />
+            범위 네모로 지정
+          </Button>
+          {s.area && (
+            <span className="text-[11px] text-ink-soft">
+              지정 범위 {((s.area[2] - s.area[0]) * 111.32 * Math.cos((((s.area[1] + s.area[3]) / 2) * Math.PI) / 180)).toFixed(1)} ×{' '}
+              {((s.area[3] - s.area[1]) * 110.574).toFixed(1)} km{' '}
+              <button type="button" className="text-accent underline" onClick={clearDraftArea}>
+                지우기
+              </button>
+            </span>
+          )}
+          <label className="flex items-center gap-1 text-[11px] text-ink-soft" title="지도 건물로 만들 때 영업·업무용수 = 가정용수 × 이 비율. 수도정비기본계획(업종별 용수 비율) 값으로 바꾸세요">
+            영업·업무용 (가정용 대비 %)
+            <span className="w-16">
+              <NumberField value={s.businessRatio} min={0} step={5} onCommit={(v) => s.set({ businessRatio: Math.max(0, v) })} />
+            </span>
+          </label>
           <input
             ref={fileInput}
             type="file"
@@ -123,7 +144,7 @@ function DraftDialog() {
             </span>
           )}
         </div>
-        <Note>수용가 자료가 없으면 관망을 만들 지역으로 지도를 옮긴 뒤 ‘지도 화면의 건물로 만들기’를 누르세요 — 건물 면적·층수·용도로 세대수를 개략 추정해 수용가로 씁니다(참고용).</Note>
+        <Note>수용가 자료가 없으면 ‘범위 네모로 지정’으로 지도에서 두 모서리를 찍거나(없으면 지금 지도 화면 전체) ‘건물로 만들기’를 누르세요 — 건축물대장 세대수(없으면 건물 면적·층수)로 가정용수를, 가정용수 × 영업·업무 비율로 상가·업무 용수를 잡습니다. 공장·창고는 뺍니다(참고용). 영업·업무 비율을 바꾸면 다시 누르세요.</Note>
         <Note>요금·급수 대장에서 내려받은 표를 그대로 넣으세요. 열: 수용가 번호, X(경도)·Y(위도) 또는 평면 좌표, 사용량. 엑셀은 ‘CSV(쉼표로 분리)’로 저장합니다. 주소만 있는 자료는 먼저 좌표로 바꿔야 합니다.</Note>
         {s.table && s.mapping && (
           <div className="mt-2 flex flex-wrap items-end gap-2">

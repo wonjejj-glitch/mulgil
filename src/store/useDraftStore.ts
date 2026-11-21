@@ -30,6 +30,10 @@ interface DraftState {
   sourceAuto: boolean;
   maxServiceDistance: number;
   maxPipeLength: number;
+  /** 지도 건물로 수용가를 만들 때 영업·업무용수 = 가정용수 × 이 비율(%) */
+  businessRatio: number;
+  /** 지도 건물을 읽을 범위 [서, 남, 동, 북] (없으면 지금 지도 화면) */
+  area: [number, number, number, number] | null;
   water: WaterDraftOptions;
   sewer: SewerDraftOptions;
   result: DraftResult | null;
@@ -68,6 +72,8 @@ export const useDraftStore = create<DraftState>()((set) => ({
   sourceAuto: false,
   maxServiceDistance: 80,
   maxPipeLength: 300,
+  businessRatio: 30,
+  area: null,
   water: { ...DEFAULT_WATER_DRAFT },
   sewer: { ...DEFAULT_SEWER_DRAFT },
   result: null,

@@ -5,8 +5,28 @@ import type { Customer } from '../../core/io/customerCsv';
 import type { DraftLink, DraftResult } from '../../core/model/networkDraft';
 import type { LngLat } from '../../core/model/types';
 
-export function buildDraftLayers(customers: Customer[] | null, result: DraftResult | null, source: LngLat | null, epoch: number): Layer[] {
+export function buildDraftLayers(
+  customers: Customer[] | null,
+  result: DraftResult | null,
+  source: LngLat | null,
+  epoch: number,
+  area: [number, number, number, number] | null = null,
+): Layer[] {
   const layers: Layer[] = [];
+  if (area) {
+    const [w, s, e, n] = area;
+    layers.push(
+      new PathLayer<LngLat[]>({
+        id: `draft-area-${epoch}`,
+        data: [[[w, s], [e, s], [e, n], [w, n], [w, s]]],
+        getPath: (p) => p,
+        getColor: [255, 255, 255, 220],
+        getWidth: 2,
+        widthUnits: 'pixels',
+        pickable: false,
+      }),
+    );
+  }
   const unserved = new Set(result?.unserved.map((u) => u.id) ?? []);
   if (result) {
     layers.push(

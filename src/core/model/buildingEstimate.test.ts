@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignWaterDemand, estimateBuildings, estimateHouseholds, floorsFromParts, floorsFromTags, ringArea, ringCenter, vworldBuildingToMap, type MapBuilding } from './buildingEstimate';
+import { applyBusinessRatio, assignWaterDemand, estimateBuildings, estimateHouseholds, floorsFromParts, floorsFromTags, ringArea, ringCenter, vworldBuildingToMap, type MapBuilding } from './buildingEstimate';
 import type { LngLat } from './types';
 
 // 위도 37° 부근 약 20 m × 20 m 사각형
@@ -103,5 +103,29 @@ describe('브이월드 건물 → 세대수', () => {
     expect(b.tags).toEqual({ building: 'yes' });
     expect(estimateBuildings([b]).items[0].households).toBe(1);
     expect(vworldBuildingToMap({ id: '2', floors: 1, hasFloors: false, name: '', polygons: [] })).toBeNull();
+  });
+});
+
+describe('영업·업무용수 = 가정용수 × 비율', () => {
+  const p: [number, number] = [128.87, 35.24];
+  const o = { personsPerHousehold: 2, litersPerCapita: 500, businessRatio: 30 }; // 세대당 1 m³/일
+  it('가정용 합 × 비율을 상가·업무 건물에 무게 비율로 나눈다', () => {
+    const r = applyBusinessRatio(
+      [
+        { id: 'H1', position: p, households: 60, business: false },
+        { id: 'H2', position: p, households: 40, business: false },
+        { id: 'B1', position: p, households: 3, business: true },
+        { id: 'B2', position: p, households: 1, business: true },
+        { id: 'CSV', position: p, demand: 7 },
+      ],
+      o,
+    );
+    const d = Object.fromEntries(r.map((s) => [s.id, s.demand]));
+    expect(d).toEqual({ H1: 60, H2: 40, B1: 22.5, B2: 7.5, CSV: 7 });
+    expect(r.find((s) => s.id === 'B1')!.households).toBe(0);
+  });
+  it('상가·업무 건물이 없으면 가정 쪽에 비율만큼 얹는다', () => {
+    const r = applyBusinessRatio([{ id: 'H1', position: p, households: 10, business: false }], o);
+    expect(r[0].demand).toBeCloseTo(13, 9);
   });
 });
