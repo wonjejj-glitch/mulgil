@@ -14,3 +14,6 @@ sewer_rehab/
 
 # GitHub Actions 가 빌드해 넣는 SWMM 5.2.4 엔진 (로컬에는 없음)
 src/core/swmm/engine/
+
+# 시연 영상 준비 자료 (사업 자료 수치 포함 — 올리지 않음)
+/시연자료/
