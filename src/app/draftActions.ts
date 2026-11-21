@@ -257,7 +257,7 @@ export async function generateDraft(): Promise<void> {
       let k = 0;
       for (let i = 1; i < z.length; i++) if (mode === 'water' ? z[i] > z[k] : z[i] < z[k]) k = i;
       source = customers[k].position;
-      warnings.push(`${mode === 'water' ? '수원' : '방류구'} 위치를 지정하지 않아 ${mode === 'water' ? '가장 높은' : '가장 낮은'} 수용가(${customers[k].id}, 지반고 ${z[k].toFixed(1)} m) 근처로 정했습니다.`);
+      warnings.push(`${mode === 'water' ? '수원' : '방류구'} 위치를 지정하지 않아 ${mode === 'water' ? '가장 높은' : '가장 낮은'} 수용가(${customers[k].id}, 지반고 ${z[k].toFixed(1)} m) 근처로 정했습니다.` + (mode === 'water' ? ' 임시 위치라 수압이 실제와 다릅니다 — 실제 배수지 위치·수위로 다시 만드세요.' : ' 임시 위치라 관저고·매설깊이가 실제와 다를 수 있습니다 — 처리장·간선 접속점으로 다시 만드세요.'));
       useDraftStore.getState().set({ source, sourceAuto: true });
     }
     const box = bboxOf([...customers.map((c) => c.position), source, ...reach])!;
