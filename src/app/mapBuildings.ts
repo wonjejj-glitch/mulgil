@@ -90,7 +90,7 @@ async function withRegister(buildings: MapBuilding[], onProgress?: BuildingProgr
     }
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
-    return { buildings, failed: true, note: `건축물대장 조회 실패(${why}, 4번 다시 물어도 안 됨) — 세대수는 건물 면적·층수·이름으로만 추정했습니다. 공장·창고도 빠지지 않았으니 잠시 뒤 다시 누르세요.` };
+    return { buildings, failed: true, note: `건축물대장 조회 실패(${why}, 7번 다시 물어도 안 됨) — 세대수는 건물 면적·층수·이름으로만 추정했습니다. 공장·창고도 빠지지 않았으니 잠시 뒤 다시 누르세요.` };
   }
   const m = registerOverBuildings(buildings, items);
   const parts = [`건축물대장과 맞춘 건물 ${m.matched.toLocaleString()}동은 실제 세대수를 썼고, 공장·창고 등 ${m.excluded.toLocaleString()}동은 뺐습니다.`];
