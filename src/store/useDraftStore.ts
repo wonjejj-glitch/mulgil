@@ -41,6 +41,8 @@ interface DraftState {
   removed: Customer[][];
   /** 직접 뺀 수용가 ID — 지도 건물을 다시 읽어도 넣지 않는다 */
   excluded: string[];
+  /** 마지막으로 지도 건물을 읽을 때 건축물대장 조회가 실패했는지 (다시 조회 단추를 보인다) */
+  registerFailed: boolean;
   /** 배수지(상수)·방류구(하수) 후보 */
   sites: { kind: 'reservoir'; result: ReservoirSuggestion } | { kind: 'outfall'; list: (GroundPoint & { kind: 'edge' | 'customer' })[] } | null;
   water: WaterDraftOptions;
@@ -87,6 +89,7 @@ export const useDraftStore = create<DraftState>()((set) => ({
   removed: [],
   excluded: [],
   sites: null,
+  registerFailed: false,
   water: { ...DEFAULT_WATER_DRAFT },
   sewer: { ...DEFAULT_SEWER_DRAFT },
   result: null,

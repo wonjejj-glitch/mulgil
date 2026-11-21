@@ -199,6 +199,14 @@ function DraftDialog() {
             )}
           </div>
         )}
+        {s.registerFailed && s.customers.length > 0 && !s.table && s.busy === null && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-200">
+            <span>건축물대장 조회 실패 — 건물 면적으로 추정한 값입니다(공장·창고도 포함). 공공데이터포털이 잠시 바쁠 수 있습니다.</span>
+            <Button className="ml-auto" disabled={s.busy !== null} onClick={() => void loadCustomersFromMap()}>
+              건축물대장 다시 조회
+            </Button>
+          </div>
+        )}
         {s.customers.length > 0 && !s.table && s.busy === null && (
           <Note tone="warn">지도 건물로 만든 개략 수용가입니다(층수·용도가 없는 건물은 기본값). 관망 초안의 관경·유량은 참고용으로만 보세요.</Note>
         )}
