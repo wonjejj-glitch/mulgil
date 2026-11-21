@@ -84,7 +84,7 @@ export function WaterDemandModal() {
 
   const loadMap = () =>
     run(async () => {
-      const { buildings, partsUsed, source, note } = await fetchMapBuildings(junctions.map((j) => j.position), 100, (done, total) => setProgress(total > 1 ? `지도 건물 ${done}/${total} 구역` : ''));
+      const { buildings, partsUsed, source, note } = await fetchMapBuildings(junctions.map((j) => j.position), 100, (done, total, unit) => setProgress(`${unit} ${done}/${total}`));
       const est = estimateBuildings(buildings);
       if (est.items.length === 0) throw new Error(`이 범위에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다.`);
       const c = est.byCategory;

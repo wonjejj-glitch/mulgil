@@ -91,8 +91,8 @@ export async function loadCustomersFromMap(): Promise<void> {
   store.set({ busy: '지도 건물 읽는 중…', error: null });
   try {
     const [w, s, e, n] = view;
-    const { buildings, partsUsed, source, note } = await fetchMapBuildings([[w, s], [e, n]], 0, (done, total) => {
-      if (total > 1) useDraftStore.getState().set({ busy: `지도 건물 읽는 중… (${done}/${total} 구역)` });
+    const { buildings, partsUsed, source, note } = await fetchMapBuildings([[w, s], [e, n]], 0, (done, total, unit) => {
+      useDraftStore.getState().set({ busy: `지도 건물 읽는 중… (${unit} ${done}/${total})` });
     });
     const est = estimateBuildings(buildings);
     if (est.items.length === 0) throw new Error(`지금 지도 화면 안에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다. 관망을 만들 지역으로 지도를 옮기고 다시 누르세요.`);

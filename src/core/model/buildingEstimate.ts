@@ -67,6 +67,16 @@ export function floorsFromTags(tags: Record<string, string>): number | null {
 
 /** 건물 하나의 세대수(비주거는 세대 환산값). 빼야 하는 건물이면 null. floorsKnown: 층수를 자료에서 찾았는지. */
 export function estimateHouseholds(area: number, tags: Record<string, string>, options: BuildingEstimateOptions = DEFAULT_BUILDING_ESTIMATE): { households: number; category: BuildingCategory; floors: number; floorsKnown: boolean } | null {
+  // 건축물대장과 맞춘 건물: 대장의 세대수·용도를 그대로 쓴다 (registerOverBuildings)
+  const fromRegister = tags['register:households'];
+  if (fromRegister !== undefined) {
+    const households = Number(fromRegister);
+    if (!(households > 0)) return null;
+    const c = tags['register:category'];
+    const category: BuildingCategory = c === '공동주택' || c === '단독주택' || c === '비주거' ? c : '용도 미상';
+    const levels = floorsFromTags(tags);
+    return { households, category, floors: levels ?? 1, floorsKnown: levels !== null };
+  }
   let type = (tags.building ?? 'yes').toLowerCase();
   if (SKIP.test(type) || area < 15) return null;
   const name = `${tags.name ?? ''} ${tags['name:ko'] ?? ''}`;
@@ -291,5 +301,7 @@ export function vworldBuildingToMap(b: VworldBuildingLike): MapBuilding | null {
   const tags: Record<string, string> = { building: 'yes' };
   if (b.hasFloors) tags['building:levels'] = String(b.floors);
   if (b.name) tags.name = b.name;
+  // 건물관리번호 앞 19자리 = 건물이 선 필지의 PNU (건축물대장과 잇는 열쇠)
+  if (/^\d{19}/.test(b.id)) tags['ref:pnu'] = b.id.slice(0, 19);
   return { id: `V${b.id || `${best[0][0].toFixed(6)},${best[0][1].toFixed(6)}`}`, ring: best, tags };
 }

@@ -11,6 +11,8 @@ import { fetchParcelsAlong } from './vworldData';
 export const DATA_GO_KR_KEY: string = (import.meta.env.VITE_DATA_GO_KR_KEY as string | undefined) ?? '';
 
 const ENDPOINT = 'https://apis.data.go.kr/1613000/BldRgstHubService/getBrTitleInfo';
+/** 법정동별 표제부 (이 창을 연 동안 다시 받지 않는다) */
+const dongCache = new Map<string, RegisterItem[]>();
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
 const num = (v: unknown) => Number(v) || 0;
 
@@ -47,6 +49,26 @@ async function fetchDongPage(key: string, sigungu: string, bjdong: string, page:
     }),
   );
   return { items, total: num(body?.totalCount) };
+}
+
+/** 한 법정동의 표제부 전부. onPage 는 받은 쪽마다 한 번 (조회 횟수 세기용). */
+export async function fetchRegisterDong(sigungu: string, bjdong: string, onPage?: () => void): Promise<RegisterItem[]> {
+  if (!DATA_GO_KR_KEY) throw new Error('건축물대장(공공데이터포털) 인증키가 이 사이트에 들어 있지 않습니다.');
+  const key = `${sigungu}${bjdong}`;
+  const cached = dongCache.get(key);
+  if (cached) return cached;
+  const items: RegisterItem[] = [];
+  let page = 1;
+  let pages: number;
+  do {
+    const r = await fetchDongPage(DATA_GO_KR_KEY, sigungu, bjdong, page);
+    onPage?.();
+    items.push(...r.items);
+    pages = Math.max(1, Math.ceil(r.total / 100));
+    page++;
+  } while (page <= pages);
+  dongCache.set(key, items);
+  return items;
 }
 
 export interface RegisterSources {
@@ -96,10 +118,11 @@ export async function registerHouseholdsAlong(paths: LngLat[][], onProgress?: (t
   );
   const c = r.byCategory;
   const fmt = (k: RegisterCategory) => `${k} ${c[k].count.toLocaleString()}동 ${Math.round(c[k].households).toLocaleString()}세대`;
+  const factories = c['공장·창고'].count;
   return {
     lots: r.lots,
     parcels: parcels.length,
     calls,
-    label: `건축물대장 — 필지 ${r.lots.length.toLocaleString()}곳 · ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('비주거')}(세대 환산) · 법정동 ${dongs.size}곳 조회 ${calls}번`,
+    label: `건축물대장 — 필지 ${r.lots.length.toLocaleString()}곳 · ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('비주거')}(세대 환산)${factories ? ` · 공장·창고 등 ${factories.toLocaleString()}동은 뺌` : ''} · 법정동 ${dongs.size}곳 조회 ${calls}번`,
   };
 }

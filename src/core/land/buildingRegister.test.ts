@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { householdsByLot, householdsOf, lotKey, parsePnu, type RegisterItem } from './buildingRegister';
+import { estimateBuildings, type MapBuilding } from '../model/buildingEstimate';
+import { householdsByLot, householdsOf, lotKey, parsePnu, registerOverBuildings, type RegisterItem } from './buildingRegister';
 
 const item = (p: Partial<RegisterItem>): RegisterItem => ({
   sigunguCd: '48250', bjdongCd: '10800', platGbCd: '0', bun: '0121', ji: '0002', mainAtchGbCd: '0', mainPurpsCdNm: '공동주택', bldNm: '', dongNm: '', hhldCnt: 0, fmlyCnt: 0, hoCnt: 0, grndFlrCnt: 0, totArea: 0, ...p,
@@ -33,5 +34,39 @@ describe('건축물대장 세대수', () => {
     expect(r.matched).toBe(2);
     expect(r.unmatched).toBe(1);
     expect(r.byCategory.공동주택.households).toBe(256);
+  });
+
+  it('공장·창고는 세대에서 뺀다', () => {
+    expect(householdsOf(item({ mainPurpsCdNm: '공장', totArea: 3000 }))).toEqual({ households: 0, category: '공장·창고' });
+    expect(householdsOf(item({ mainPurpsCdNm: '창고시설', totArea: 900 })).households).toBe(0);
+    expect(householdsOf(item({ mainPurpsCdNm: '위험물저장및처리시설' })).category).toBe('공장·창고');
+    expect(householdsOf(item({ mainPurpsCdNm: '업무시설', totArea: 900 }))).toEqual({ households: 3, category: '비주거' });
+  });
+
+  it('지도 건물에 필지의 대장 세대수를 연면적 비율로 나누고, 공장만 있는 필지는 뺀다', () => {
+    // 위도 35.24° 부근 약 20 m × 20 m
+    const sq = (x: number): [number, number][] => [[x, 35.24], [x + 0.00022, 35.24], [x + 0.00022, 35.2402], [x, 35.2402], [x, 35.24]];
+    const b = (id: string, pnu: string, x: number, levels: number): MapBuilding => ({ id, ring: sq(x), tags: { building: 'yes', 'building:levels': String(levels), 'ref:pnu': pnu } });
+    const apt = '4825010800101210002', factory = '4825010800100500001', none = '4825010800109990001';
+    const r = registerOverBuildings(
+      [b('A1', apt, 128.87, 20), b('A2', apt, 128.871, 10), b('F1', factory, 128.872, 2), b('X1', none, 128.873, 3)],
+      [
+        item({ hhldCnt: 134, dongNm: '102동' }),
+        item({ hhldCnt: 122, dongNm: '104동' }),
+        item({ bun: '0050', ji: '0001', mainPurpsCdNm: '공장', totArea: 5000 }),
+        item({ bun: '0050', ji: '0001', mainPurpsCdNm: '창고시설', totArea: 800 }),
+      ],
+    );
+    expect(r).toMatchObject({ matched: 2, excluded: 1, unmatched: 1 });
+    expect(r.buildings.map((x) => x.id).sort()).toEqual(['A1', 'A2', 'X1']);
+    const share = (id: string) => Number(r.buildings.find((x) => x.id === id)!.tags['register:households']);
+    // 256 세대를 20층 : 10층 = 2 : 1 로
+    expect(share('A1')).toBeCloseTo((256 * 2) / 3, 1);
+    expect(share('A2')).toBeCloseTo(256 / 3, 1);
+    const est = estimateBuildings(r.buildings);
+    expect(est.byCategory.공동주택.count).toBe(2);
+    expect(est.byCategory.공동주택.households).toBeCloseTo(256, 6);
+    // 대장에 없는 건물은 예전처럼 층수·면적으로 짐작
+    expect(est.byCategory['용도 미상'].count).toBe(1);
   });
 });
