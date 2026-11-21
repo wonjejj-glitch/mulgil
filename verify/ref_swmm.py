@@ -41,7 +41,7 @@ def main(inp: str, out_json: str) -> None:
         return [[round(v, 6) for v in output.get_link_series(h, i, attr, 0, periods - 1)] for i in range(n_link)]
 
     data = {
-        'engine': solver.swmm_version(),
+        'engine': solver.swmm_get_version(),
         'periods': periods,
         'nodeIds': node_ids,
         'linkIds': link_ids,
