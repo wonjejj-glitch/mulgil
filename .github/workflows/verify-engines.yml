@@ -51,7 +51,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Official engines (EPyT = OWA-EPANET 2.3, WNTR = EPA EPANET 2.2, swmm-toolkit = EPA SWMM 5.2)
-        run: pip install -q epyt wntr swmm-toolkit pyswmm
+        run: pip install -q epyt wntr six swmm-toolkit pyswmm
       - name: Test networks
         run: |
           mkdir -p "$VERIFY_DIR"/nets "$VERIFY_DIR"/swmm "$VERIFY_DIR"/ref
@@ -70,7 +70,8 @@ jobs:
       - name: Official engine results
         run: |
           OWA=$(python -c "import epyt, os; print(os.path.join(os.path.dirname(epyt.__file__), 'libraries', 'glnx', 'libepanet2.so'))")
-          EPA=$(python -c "import wntr, os; print(os.path.join(os.path.dirname(wntr.__file__), 'epanet', 'libepanet', 'linux-x64', 'libepanet22.so'))")
+          # wntr 패키지는 불러오지 않고(무거운 의존성) 위치만 찾는다
+          EPA=$(python -c "import importlib.util, os; print(os.path.join(os.path.dirname(importlib.util.find_spec('wntr').origin), 'epanet', 'libepanet', 'linux-x64', 'libepanet22.so'))")
           for f in "$VERIFY_DIR"/nets/*.inp; do
             n=$(basename "$f" .inp)
             python verify/ref_epanet.py "$OWA" "$f" "$VERIFY_DIR/ref/$n.owa.json"
