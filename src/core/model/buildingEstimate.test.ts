@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignWaterDemand, estimateBuildings, estimateHouseholds, floorsFromParts, floorsFromTags, ringArea, ringCenter, type MapBuilding } from './buildingEstimate';
+import { assignWaterDemand, estimateBuildings, estimateHouseholds, floorsFromParts, floorsFromTags, ringArea, ringCenter, vworldBuildingToMap, type MapBuilding } from './buildingEstimate';
 import type { LngLat } from './types';
 
 // 위도 37° 부근 약 20 m × 20 m 사각형
@@ -80,5 +80,28 @@ describe('층수 찾기', () => {
     expect(b[0].tags['building:levels']).toBe('25');
     expect(b[1].tags['building:levels']).toBe('3');
     expect(estimateBuildings(b).floorsKnown).toBe(2);
+  });
+});
+
+describe('브이월드 건물 → 세대수', () => {
+  // 위도 35.23° 에서 약 30 m × 30 m (≈ 900 m²) 정사각형
+  const square = (x: number, y: number, d = 0.00033): [number, number][] => [[x, y], [x + d, y], [x + d, y + d * 0.9], [x, y + d * 0.9], [x, y]];
+  it('가장 큰 조각을 쓰고, 층수·이름을 태그로 넣는다', () => {
+    const b = vworldBuildingToMap({ id: '4825', floors: 15, hasFloors: true, name: '○○아파트 101동', polygons: [[square(128.88, 35.23, 0.0001)], [square(128.881, 35.23)]] })!;
+    expect(b.id).toBe('V4825');
+    expect(b.ring[0]).toEqual([128.881, 35.23]);
+    expect(b.tags).toEqual({ building: 'yes', 'building:levels': '15', name: '○○아파트 101동' });
+    const est = estimateBuildings([b]);
+    expect(est.byCategory.공동주택.count).toBe(1);
+    expect(est.floorsKnown).toBe(1);
+    // 연면적 ≈ 900 m² × 15층 × 0.8 ÷ 100 m² ≈ 108 세대
+    expect(est.items[0].households).toBeGreaterThan(90);
+    expect(est.items[0].households).toBeLessThan(125);
+  });
+  it('층수가 비어 있으면 층수 태그를 넣지 않아 기본값 규칙을 탄다', () => {
+    const b = vworldBuildingToMap({ id: '1', floors: 1, hasFloors: false, name: '', polygons: [[square(128.88, 35.23, 0.0001)]] })!;
+    expect(b.tags).toEqual({ building: 'yes' });
+    expect(estimateBuildings([b]).items[0].households).toBe(1);
+    expect(vworldBuildingToMap({ id: '2', floors: 1, hasFloors: false, name: '', polygons: [] })).toBeNull();
   });
 });

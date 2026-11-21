@@ -135,6 +135,10 @@ export interface VworldBuilding {
   id: string;
   /** 지상 층수 (없으면 1) */
   floors: number;
+  /** 층수가 자료에 있었는지 */
+  hasFloors: boolean;
+  /** 건물명 + 동 (예: '○○아파트 101동'), 없으면 빈 문자열 */
+  name: string;
   polygons: LngLat[][][];
 }
 
@@ -155,6 +159,8 @@ export async function fetchBuildingsBox(key: string, box: [number, number, numbe
       out.push({
         id: f.properties.bd_mgt_sn ?? '',
         floors: Math.max(1, Math.round(Number(f.properties.gro_flo_co) || 1)),
+        hasFloors: Number(f.properties.gro_flo_co) > 0,
+        name: `${f.properties.buld_nm ?? ''} ${f.properties.buld_nm_dc ?? ''}`.trim(),
         polygons: coords.map((poly) => poly.map((ring) => ring.map((c): LngLat => [c[0], c[1]]))),
       });
     }

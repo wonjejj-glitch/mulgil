@@ -1,11 +1,11 @@
 /**
- * 상수: 수용가 CSV · 건물 SHP · 지도(OpenStreetMap) 건물로 절점 기본 수요량 넣기.
+ * 상수: 수용가 CSV · 건물 SHP · 지도 건물(브이월드, 안 되면 OpenStreetMap)로 절점 기본 수요량 넣기.
  * 파일 읽기는 app/sewageImport.ts(하수와 같은 형식), 배분은 core/model/buildingEstimate.ts.
  */
 import { Building2, Download, FileUp, LoaderCircle, Map as MapIcon } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { DATA_GO_KR_KEY, registerHouseholdsAlong } from '../../app/buildingRegister';
-import { fetchOsmBuildings } from '../../app/osmBuildings';
+import { BUILDING_SOURCE_LABEL, fetchMapBuildings } from '../../app/mapBuildings';
 import { linkPath } from '../../core/model/networkEdit';
 import { readSewageFiles } from '../../app/sewageImport';
 import { assignWaterDemand, DEFAULT_WATER_DEMAND, estimateBuildings, type DemandSource, type WaterDemandOptions } from '../../core/model/buildingEstimate';
@@ -84,13 +84,13 @@ export function WaterDemandModal() {
 
   const loadMap = () =>
     run(async () => {
-      const { buildings, partsUsed } = await fetchOsmBuildings(junctions.map((j) => j.position), 100, (done, total) => setProgress(total > 1 ? `지도 건물 ${done}/${total} 구역` : ''));
+      const { buildings, partsUsed, source, note } = await fetchMapBuildings(junctions.map((j) => j.position), 100, (done, total) => setProgress(total > 1 ? `지도 건물 ${done}/${total} 구역` : ''));
       const est = estimateBuildings(buildings);
-      if (est.items.length === 0) throw new Error('이 범위의 지도(OpenStreetMap)에 건물이 없습니다.');
+      if (est.items.length === 0) throw new Error(`이 범위에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다.`);
       const c = est.byCategory;
       const fmt = (k: keyof typeof c) => `${k} ${c[k].count.toLocaleString()}동 ≈ ${Math.round(c[k].households).toLocaleString()}세대`;
       setSources(est.items.map((b) => ({ id: b.id, position: b.position, households: b.households })));
-      setLabels([`지도(OpenStreetMap) 건물 ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산) · 층수 자료 있는 건물 ${est.floorsKnown.toLocaleString()}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}), 나머지는 기본 층수`]);
+      setLabels([`${BUILDING_SOURCE_LABEL[source]} ${est.items.length.toLocaleString()}동 — ${fmt('공동주택')}, ${fmt('단독주택')}, ${fmt('용도 미상')}, ${fmt('비주거')}(세대 환산) · 층수 자료 있는 건물 ${est.floorsKnown.toLocaleString()}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}), 나머지는 기본 층수`, ...(note ? [note] : [])]);
       setFromMap(true);
     });
 
@@ -152,7 +152,7 @@ export function WaterDemandModal() {
             >
               <Building2 size={12} /> 건축물대장 세대수 (정확)
             </Button>
-            <Button disabled={busy || junctions.length === 0} onClick={() => void loadMap()} title="자료가 없을 때: 지도(OpenStreetMap) 건물 외곽선·층수·용도로 세대수를 개략 추정합니다">
+            <Button disabled={busy || junctions.length === 0} onClick={() => void loadMap()} title="자료가 없을 때: 지도 건물(브이월드, 안 되면 OpenStreetMap) 외곽선·층수·이름으로 세대수를 개략 추정합니다">
               <MapIcon size={12} /> 지도에서 건물 읽기 (개략)
             </Button>
             <select className="rounded border border-line bg-raised px-2 py-1 text-ink" value={crs} onChange={(e) => setCrs(e.target.value)} title="CSV 와 .prj 없는 SHP 의 좌표계">
@@ -181,7 +181,7 @@ export function WaterDemandModal() {
             <li><b className="text-ink-soft">수용가 대장 CSV</b>: X·Y(또는 경도·위도) + 사용량(월·일) 또는 세대수 — 가장 정확합니다.</li>
             <li><b className="text-ink-soft">건물 SHP</b>(점·면): 세대수 열이 있으면 씁니다.</li>
             <li><b className="text-ink-soft">건축물대장 세대수</b>: 수용가 대장이 없을 때 가장 좋은 방법 — 관로 주변 필지의 건축물대장(공동주택 세대수, 단독·다가구 가구수, 상가 등은 연면적 환산)을 받아 씁니다. 공개 사이트에서 됩니다.</li>
-            <li><b className="text-ink-soft">지도에서 건물 읽기</b>: 자료가 하나도 없을 때 참고용 — OpenStreetMap 건물 면적·층수·용도로 세대수를 개략 추정합니다(정확도 낮음, 빠진 건물 있음).</li>
+            <li><b className="text-ink-soft">지도에서 건물 읽기</b>: 자료가 하나도 없을 때 참고용 — 브이월드 건물(안 되면 OpenStreetMap) 면적·층수·이름으로 세대수를 개략 추정합니다(정확도 낮음, 빠진 건물 있음).</li>
           </ul>
           {labels.length > 0 && (
             <div className="mt-2 space-y-0.5 text-[11px] text-ink-soft">

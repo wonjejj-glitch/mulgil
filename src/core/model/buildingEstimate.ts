@@ -261,3 +261,35 @@ export function assignWaterDemand(junctions: { id: string; position: LngLat }[],
   res.perNode = [...per.values()].sort((a, b) => b.m3day - a.m3day);
   return res;
 }
+
+/** 브이월드 건물(도로명주소 건물 LT_C_SPBD) 한 동 — 세대수 추정에 쓰는 값만. */
+export interface VworldBuildingLike {
+  id: string;
+  floors: number;
+  hasFloors: boolean;
+  name: string;
+  polygons: LngLat[][][];
+}
+
+/**
+ * 브이월드 건물 → 세대수 추정용 건물. 용도 자료가 없어 building=yes 로 두고, 지상 층수는 building:levels,
+ * 건물명(+동)은 name 으로 넣는다 (이름의 '아파트'·'빌라' 등으로 용도를 맞춘다). 여러 조각이면 가장 큰 조각의 바깥 고리.
+ */
+export function vworldBuildingToMap(b: VworldBuildingLike): MapBuilding | null {
+  let best: LngLat[] | null = null;
+  let bestArea = 0;
+  for (const poly of b.polygons) {
+    const outer = poly[0];
+    if (!outer || outer.length < 4) continue;
+    const a = ringArea(outer);
+    if (a > bestArea) {
+      best = outer;
+      bestArea = a;
+    }
+  }
+  if (!best) return null;
+  const tags: Record<string, string> = { building: 'yes' };
+  if (b.hasFloors) tags['building:levels'] = String(b.floors);
+  if (b.name) tags.name = b.name;
+  return { id: `V${b.id || `${best[0][0].toFixed(6)},${best[0][1].toFixed(6)}`}`, ring: best, tags };
+}

@@ -82,3 +82,17 @@ export function splitBox(box: [number, number, number, number], maxKm2: number):
   }
   return out;
 }
+
+/** 점들을 감싸는 경위도 사각형 [서, 남, 동, 북] + 사방 여유(m). */
+export function boxAround(points: LngLat[], marginM: number): [number, number, number, number] {
+  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
+  for (const [x, y] of points) {
+    w = Math.min(w, x);
+    e = Math.max(e, x);
+    s = Math.min(s, y);
+    n = Math.max(n, y);
+  }
+  const lat = ((s + n) / 2) * (Math.PI / 180);
+  const dLng = marginM / (111320 * Math.cos(lat)), dLat = marginM / 110574;
+  return [w - dLng, s - dLat, e + dLng, n + dLat];
+}

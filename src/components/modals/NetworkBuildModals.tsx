@@ -102,7 +102,7 @@ function DraftDialog() {
             <FileUp size={13} />
             CSV 파일 열기
           </Button>
-          <Button disabled={s.busy !== null} onClick={() => void loadCustomersFromMap()} title="수용가 자료가 없을 때: 지금 지도 화면 안의 OpenStreetMap 건물로 개략 수용가를 만듭니다">
+          <Button disabled={s.busy !== null} onClick={() => void loadCustomersFromMap()} title="수용가 자료가 없을 때: 지금 지도 화면 안의 건물(브이월드, 안 되면 OpenStreetMap)로 개략 수용가를 만듭니다">
             <MapIcon size={13} />
             지도 화면의 건물로 만들기 (개략)
           </Button>

@@ -3,7 +3,7 @@
  * 한국 OSM 건물은 지역마다 빠진 곳이 많고 층수·용도 태그가 드물어 결과는 참고용이다.
  */
 import { floorsFromParts, type MapBuilding } from '../core/model/buildingEstimate';
-import { boxAreaKm2, splitBox } from '../core/model/buildingCells';
+import { boxAround, boxAreaKm2, splitBox } from '../core/model/buildingCells';
 import type { LngLat } from '../core/model/types';
 import { OVERPASS_SERVERS } from './osmRoads';
 
@@ -69,16 +69,7 @@ export async function fetchOsmBuildings(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ buildings: MapBuilding[]; partsUsed: number }> {
   if (points.length === 0) throw new Error('관망이 비어 있습니다.');
-  let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity;
-  for (const [x, y] of points) {
-    w = Math.min(w, x);
-    e = Math.max(e, x);
-    s = Math.min(s, y);
-    n = Math.max(n, y);
-  }
-  const lat = ((s + n) / 2) * (Math.PI / 180);
-  const dLng = marginM / (111320 * Math.cos(lat)), dLat = marginM / 110574;
-  const box: [number, number, number, number] = [w - dLng, s - dLat, e + dLng, n + dLat];
+  const box = boxAround(points, marginM);
   const km2 = boxAreaKm2(box);
   if (km2 > MAX_BUILDING_AREA_KM2) {
     throw new Error(`범위가 ${km2.toFixed(0)} km² 로 너무 넓습니다 (한 번에 ${MAX_BUILDING_AREA_KM2} km² 까지). 지도를 조금 확대하거나, 관망을 구역별로 나눠 하세요.`);

@@ -23,7 +23,7 @@ import { bboxOf, CRS_DEFS, detectCrs, toWgs84, type ImportCrsChoice } from '../u
 import { adoptModel, fitToNetwork } from './actions';
 import { readBackup } from './autoBackup';
 import { getViewBounds } from './mapView';
-import { fetchOsmBuildings } from './osmBuildings';
+import { BUILDING_SOURCE_LABEL, fetchMapBuildings } from './mapBuildings';
 import { fetchOsmRoads, setUserRoads } from './osmRoads';
 import { DEFAULT_WATER_DEMAND, estimateBuildings } from '../core/model/buildingEstimate';
 import { sampleTerrainTiles } from './terrainFetch';
@@ -77,7 +77,7 @@ export function applyCustomerMapping(patch?: { mapping?: ColumnMapping; crs?: Im
 }
 
 /**
- * 수용가 자료가 없을 때: 지금 지도 화면 안의 OpenStreetMap 건물로 수용가를 만든다 (세대수 개략 추정 × 세대당 인원 × 1인 1일 급수량).
+ * 수용가 자료가 없을 때: 지금 지도 화면 안의 건물(브이월드, 안 되면 OpenStreetMap)로 수용가를 만든다 (세대수 개략 추정 × 세대당 인원 × 1인 1일 급수량).
  * 정확도가 낮아 참고용이다.
  */
 export async function loadCustomersFromMap(): Promise<void> {
@@ -91,11 +91,11 @@ export async function loadCustomersFromMap(): Promise<void> {
   store.set({ busy: '지도 건물 읽는 중…', error: null });
   try {
     const [w, s, e, n] = view;
-    const { buildings, partsUsed } = await fetchOsmBuildings([[w, s], [e, n]], 0, (done, total) => {
+    const { buildings, partsUsed, source, note } = await fetchMapBuildings([[w, s], [e, n]], 0, (done, total) => {
       if (total > 1) useDraftStore.getState().set({ busy: `지도 건물 읽는 중… (${done}/${total} 구역)` });
     });
     const est = estimateBuildings(buildings);
-    if (est.items.length === 0) throw new Error('지금 지도 화면 안에 OpenStreetMap 건물이 없습니다. 관망을 만들 지역으로 지도를 옮기고 다시 누르세요.');
+    if (est.items.length === 0) throw new Error(`지금 지도 화면 안에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다. 관망을 만들 지역으로 지도를 옮기고 다시 누르세요.`);
     const o = DEFAULT_WATER_DEMAND;
     const customers: Customer[] = est.items.map((b) => ({ id: b.id, position: b.position, demand: (b.households * o.personsPerHousehold * o.litersPerCapita) / 1000 }));
     const c = est.byCategory;
@@ -108,8 +108,9 @@ export async function loadCustomersFromMap(): Promise<void> {
       crsLabel: 'WGS84 경위도 (지도)',
       result: null,
       warnings: [
-        `지도(OpenStreetMap) 건물 ${est.items.length.toLocaleString()}동으로 만든 개략 수용가입니다 — 공동주택 ${c.공동주택.count}동, 단독 ${c.단독주택.count}동, 용도 미상 ${c['용도 미상'].count}동, 비주거 ${c.비주거.count}동. ` +
+        `${BUILDING_SOURCE_LABEL[source]} ${est.items.length.toLocaleString()}동으로 만든 개략 수용가입니다 — 공동주택 ${c.공동주택.count}동, 단독 ${c.단독주택.count}동, 용도 미상 ${c['용도 미상'].count}동, 비주거 ${c.비주거.count}동. ` +
           `층수 자료 있는 건물 ${est.floorsKnown}동(${Math.round((est.floorsKnown / est.items.length) * 100)}%${partsUsed ? `, 건물 부분에서 ${partsUsed}동` : ''}). 사용량 = 세대수 × ${o.personsPerHousehold}인 × ${o.litersPerCapita} L (예시 원단위).`,
+        ...(note ? [note] : []),
       ],
     });
   } catch (e) {
