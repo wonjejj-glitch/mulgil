@@ -90,7 +90,8 @@ export function WaterDemandModal() {
 
   const loadMap = () =>
     run(async () => {
-      const { buildings, partsUsed, source, note } = await fetchMapBuildings(junctions.map((j) => j.position), 100, (done, total, unit) => setProgress(`${unit} ${done}/${total}`));
+      const { buildings, partsUsed, source, note, registerFailed } = await fetchMapBuildings(junctions.map((j) => j.position), 100, (done, total, unit) => setProgress(`${unit} ${done}/${total}`));
+      if (registerFailed) useUIStore.getState().pushToast({ level: 'warning', title: '건축물대장 조회 실패 — 건물 면적으로 추정', message: '공공데이터포털이 응답하지 않아 세대수를 건물 면적·층수로만 잡았습니다. 잠시 뒤 다시 누르면 대장 값으로 바뀝니다.' });
       const est = estimateBuildings(buildings);
       if (est.items.length === 0) throw new Error(`이 범위에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다.`);
       const c = est.byCategory;

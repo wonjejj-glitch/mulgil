@@ -3,6 +3,7 @@ import sampleInp from '../../../public/samples/sample-district.inp?raw';
 import { parseInp } from '../io/inpParser';
 import { writeInp } from '../io/inpWriter';
 import { runHydraulics } from './epanetRunner';
+import { checkCriteria, defaultCriteria } from './criteria';
 import { applyPressureFixes, DEFAULT_PRESSURE_FIX, proposePressureFixes } from './pressureFix';
 import { toSimulationResults, type SimulationResults } from './simulationManager';
 import type { NetworkModel } from '../model/types';
@@ -82,4 +83,21 @@ describe('감압·가압 후보 제안', () => {
     const res = await solve(after);
     expect(extremes(after, res).lo).toBeGreaterThan(b.lo);
   });
+
+  it('기본 기준으로 가압 후보를 적용하면 설계기준 검토에도 펌프 자리 절점(BP_)이 남지 않는다', async () => {
+    const model = parseInp(sampleInp).model;
+    const c = defaultCriteria(model);
+    const before = await solve(model);
+    const lowBefore = checkCriteria(model, before, c).filter((h) => h.kind === 'lowPressure').length;
+    const r = proposePressureFixes(model, before, { ...DEFAULT_PRESSURE_FIX, minPressure: c.minPressure, maxPressure: c.maxPressure });
+    const chosen = r.candidates.filter((x) => x.recommended);
+    if (chosen.length === 0) return; // 샘플이 바뀌어 후보가 없으면 건너뛴다
+    const after = structuredClone(model);
+    const s = applyPressureFixes(after, chosen);
+    const res = await solve(after);
+    const hits = checkCriteria(after, res, c);
+    expect(hits.some((h) => s.nodes.includes(h.id))).toBe(false);
+    expect(hits.filter((h) => h.kind === 'lowPressure').length).toBeLessThanOrEqual(lowBefore);
+  });
 });
+

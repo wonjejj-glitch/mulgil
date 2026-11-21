@@ -44,6 +44,14 @@ export const CRITERIA_LABELS: Record<CriteriaKind, string> = {
   highVelocity: '최대 유속 초과',
 };
 
+/**
+ * 감압·가압 후보를 적용할 때 밸브·펌프 자리에 만든 절점(PRV_·BP_ 로 시작, 수요 0).
+ * 수용가가 없는 장치 연결점이라 수압 기준 검토에서 뺀다 (가압펌프 흡입 쪽은 원래 수압이 낮다).
+ */
+export function isDeviceNode(id: string, demand: number): boolean {
+  return /^(PRV|BP)_/.test(id) && !(demand > 0);
+}
+
 /** 절점은 수요 절점(junction)만, 유속은 관로만 본다. 저유속은 '전 시간 최대 유속'이 기준 미만인 관(정체 의심). */
 export function checkCriteria(model: Pick<NetworkModel, 'nodes' | 'links'>, r: SimulationResults, c: WaterCriteria): CriteriaHit[] {
   const hits: CriteriaHit[] = [];
@@ -51,7 +59,8 @@ export function checkCriteria(model: Pick<NetworkModel, 'nodes' | 'links'>, r: S
   const L = r.linkIds.length;
   for (let i = 0; i < N; i++) {
     const id = r.nodeIds[i];
-    if (model.nodes[id]?.type !== 'junction') continue;
+    const node = model.nodes[id];
+    if (node?.type !== 'junction' || isDeviceNode(id, node.demand)) continue;
     let lo = Infinity, loStep = 0, hi = -Infinity, hiStep = 0;
     for (let t = 0; t < r.stepCount; t++) {
       const p = r.node.pressure[t * N + i];

@@ -96,9 +96,12 @@ export async function loadCustomersFromMap(): Promise<void> {
   store.set({ busy: '지도 건물 읽는 중…', error: null });
   try {
     const [w, s, e, n] = view;
-    const { buildings, partsUsed, source, note } = await fetchMapBuildings([[w, s], [e, n]], 0, (done, total, unit) => {
+    const { buildings, partsUsed, source, note, registerFailed } = await fetchMapBuildings([[w, s], [e, n]], 0, (done, total, unit) => {
       useDraftStore.getState().set({ busy: `지도 건물 읽는 중… (${unit} ${done}/${total})` });
     });
+    if (registerFailed) {
+      useUIStore.getState().pushToast({ level: 'warning', title: '건축물대장 조회 실패 — 건물 면적으로 추정', message: '공공데이터포털이 응답하지 않아 세대수를 건물 면적·층수로만 잡았습니다(공장·창고도 포함). 잠시 뒤 ‘건물로 만들기’를 다시 누르면 대장 값으로 바뀝니다.' });
+    }
     const est = estimateBuildings(buildings);
     if (est.items.length === 0) throw new Error(`지금 지도 화면 안에 ${BUILDING_SOURCE_LABEL[source]}이 없습니다. 관망을 만들 지역으로 지도를 옮기고 다시 누르세요.`);
     const o = DEFAULT_WATER_DEMAND;

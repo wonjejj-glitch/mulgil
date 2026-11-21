@@ -16,6 +16,20 @@ const dongCache = new Map<string, RegisterItem[]>();
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
 const num = (v: unknown) => Number(v) || 0;
 
+/** 공공데이터포털이 잠깐 바쁠 때(503·SERVICETIMEOUT 등) 쉬었다가 다시 묻는다 (최대 4번, 0.8·1.6·2.4초 쉼). */
+async function fetchDongPageRetry(key: string, sigungu: string, bjdong: string, page: number): Promise<{ items: RegisterItem[]; total: number }> {
+  let last: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      return await fetchDongPage(key, sigungu, bjdong, page);
+    } catch (error) {
+      last = error;
+      await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+    }
+  }
+  throw last instanceof Error ? last : new Error(String(last));
+}
+
 async function fetchDongPage(key: string, sigungu: string, bjdong: string, page: number): Promise<{ items: RegisterItem[]; total: number }> {
   const url = `${ENDPOINT}?serviceKey=${encodeURIComponent(key)}&sigunguCd=${sigungu}&bjdongCd=${bjdong}&_type=json&numOfRows=100&pageNo=${page}`;
   const res = await fetch(url);
@@ -61,7 +75,7 @@ export async function fetchRegisterDong(sigungu: string, bjdong: string, onPage?
   let page = 1;
   let pages: number;
   do {
-    const r = await fetchDongPage(DATA_GO_KR_KEY, sigungu, bjdong, page);
+    const r = await fetchDongPageRetry(DATA_GO_KR_KEY, sigungu, bjdong, page);
     onPage?.();
     items.push(...r.items);
     pages = Math.max(1, Math.ceil(r.total / 100));
@@ -95,7 +109,7 @@ export async function registerHouseholdsAlong(paths: LngLat[][], onProgress?: (t
     let page = 1, pages = 1;
     do {
       onProgress?.(`건축물대장 받는 중… 법정동 ${done + 1}/${dongs.size} · ${page}/${pages}쪽`);
-      const r = await fetchDongPage(DATA_GO_KR_KEY, sg, bj, page);
+      const r = await fetchDongPageRetry(DATA_GO_KR_KEY, sg, bj, page);
       calls++;
       items.push(...r.items);
       pages = Math.max(1, Math.ceil(r.total / 100));

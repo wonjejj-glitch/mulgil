@@ -26,6 +26,8 @@ export interface MapBuildingsResult {
   source: BuildingSource;
   /** 화면·라벨에 덧붙일 안내 (예: 브이월드에 연결하지 못해 OpenStreetMap 으로 넘어감) */
   note?: string;
+  /** 건축물대장을 받지 못해 건물 면적·층수로만 추정했는지 (화면이 눈에 띄게 알린다) */
+  registerFailed?: boolean;
 }
 
 /** 브이월드 칸 하나에서 받는 최대 쪽수 (1쪽 1000동) — 아주 조밀한 1 km² 도 이 안에 든다. */
@@ -71,7 +73,7 @@ async function fetchVworld(key: string, box: [number, number, number, number], o
 }
 
 /** 브이월드 건물에 건축물대장 세대수·용도를 붙인다. 실패하면 건물은 그대로 두고 안내만 돌려준다. */
-async function withRegister(buildings: MapBuilding[], onProgress?: BuildingProgress): Promise<{ buildings: MapBuilding[]; note: string }> {
+async function withRegister(buildings: MapBuilding[], onProgress?: BuildingProgress): Promise<{ buildings: MapBuilding[]; note: string; failed?: boolean }> {
   if (!DATA_GO_KR_KEY) return { buildings, note: '건축물대장 인증키가 없어 세대수는 층수·면적·이름으로만 짐작했습니다(공장·상가도 세대로 잡힘).' };
   const dongs = [...new Set(buildings.map((b) => (b.tags['ref:pnu'] ?? '').slice(0, 10)).filter((d) => d.length === 10))];
   const items: RegisterItem[] = [];
@@ -88,7 +90,7 @@ async function withRegister(buildings: MapBuilding[], onProgress?: BuildingProgr
     }
   } catch (error) {
     const why = error instanceof Error ? error.message : String(error);
-    return { buildings, note: `건축물대장을 받지 못해(${why}) 세대수는 층수·면적·이름으로만 짐작했습니다.` };
+    return { buildings, failed: true, note: `건축물대장 조회 실패(${why}, 4번 다시 물어도 안 됨) — 세대수는 건물 면적·층수·이름으로만 추정했습니다. 공장·창고도 빠지지 않았으니 잠시 뒤 다시 누르세요.` };
   }
   const m = registerOverBuildings(buildings, items);
   const parts = [`건축물대장과 맞춘 건물 ${m.matched.toLocaleString()}동은 실제 세대수를 썼고, 공장·창고 등 ${m.excluded.toLocaleString()}동은 뺐습니다.`];
@@ -117,7 +119,7 @@ export async function fetchMapBuildings(points: LngLat[], marginM = 100, onProgr
       if (r.failed > 0) notes.push(`브이월드 ${r.total}구역 중 ${r.failed}구역은 받지 못했습니다. 다시 누르면 다시 받습니다.`);
       const reg = await withRegister(r.buildings, onProgress);
       notes.push(reg.note);
-      return { buildings: reg.buildings, partsUsed: 0, source: 'vworld', note: notes.join(' ') };
+      return { buildings: reg.buildings, partsUsed: 0, source: 'vworld', note: notes.join(' '), ...(reg.failed ? { registerFailed: true } : {}) };
     }
     fallbackNote = '브이월드 건물 자료에 연결하지 못해(인증키를 등록한 사이트가 아니거나 서버 문제) OpenStreetMap 건물로 만들었습니다 (빠진 건물이 많을 수 있음).';
   }
