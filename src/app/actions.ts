@@ -15,7 +15,7 @@ import { linkColumns, linkRows, nodeColumns, nodeRows, tableToCsv } from '../cor
 import { writeInp } from '../core/io/inpWriter';
 import { loadShapefiles } from '../core/io/loadShapefiles';
 import { looksLikeSewerGis, openSewerGisFiles } from './sewerGisImport';
-import { fetchOsmRoads } from './osmRoads';
+import { fetchRoads } from './osmRoads';
 import { looksLikeSwmm, readSwmmInp, swmmErrorHint, withRouting } from '../core/swmm/inpReader';
 import { nodeValue } from '../core/swmm/outReader';
 import { SWMM_CANCELLED, SwmmFailure, swmmManager } from '../core/swmm/swmmManager';
@@ -273,9 +273,9 @@ export async function alignNetworkToRoads(): Promise<void> {
   const pad = 0.004; // 약 400 m — 남은 밀림만큼의 도로도 들어오게
 
   aligning = true;
-  const pending = ui.pushToast({ level: 'info', title: '도로 데이터를 가져오는 중…', message: 'OpenStreetMap 도로 중심선과 관로 위치를 비교합니다 (수 초~수십 초).' });
+  const pending = ui.pushToast({ level: 'info', title: '도로 데이터를 가져오는 중…', message: '도로 중심선(브이월드 수치지도, 안 되면 OpenStreetMap)과 관로 위치를 비교합니다 (수 초~수십 초).' });
   try {
-    const roads = await fetchOsmRoads(s - pad, w - pad, n + pad, e + pad);
+    const roads = await fetchRoads(s - pad, w - pad, n + pad, e + pad);
     if (roads.length < 5) throw new Error('이 지역의 도로 데이터가 너무 적어 비교할 수 없습니다.');
 
     // 1) 좌표계 후보 비교 (이동 없이 일치도만)

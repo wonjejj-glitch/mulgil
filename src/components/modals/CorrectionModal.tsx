@@ -1,7 +1,7 @@
 import { FileUp, LoaderCircle, Mountain, Route } from 'lucide-react';
 import { NgiiLink } from '../ui/DataLinks';
 import { useRef, useState, type ReactNode } from 'react';
-import { fetchOsmRoads } from '../../app/osmRoads';
+import { fetchRoads } from '../../app/osmRoads';
 import { interpolatorFromFiles, sampleTerrainTiles } from '../../app/terrainFetch';
 import { computeLinkLength } from '../../core/model/networkEdit';
 import { snapNetworkToRoads, type SnapResult } from '../../core/model/roadSnap';
@@ -57,7 +57,7 @@ function RoadSnapSection() {
     setError(null);
     try {
       const pad = 0.002; // 약 200 m
-      const roads = await fetchOsmRoads(box[1] - pad, box[0] - pad, box[3] + pad, box[2] + pad);
+      const roads = await fetchRoads(box[1] - pad, box[0] - pad, box[3] + pad, box[2] + pad);
       const snap = snapNetworkToRoads(model, roads, { tolerance, metersPerLengthUnit: isUsUnits(model.options.flowUnits) ? 0.3048 : 1 });
       setResult({ snap, revision: rev });
       useUIStore.getState().setHighlight({ nodeIds: [...snap.nodes.keys()], linkIds: [...snap.vertices.keys()] });
@@ -109,7 +109,7 @@ function RoadSnapSection() {
       </label>
       <Note>
         절점을 가장 가까운 도로 중심선(교차로 우선) 위로 옮기고, 양 끝이 도로 위에 놓인 관로는 도로를 따라 꺾임점을 다시 만듭니다. 이 거리보다 도로에서 먼
-        절점과, 도로로 돌아가면 1.5배 넘게 길어지는 관로(논·산을 가로지르는 관로)는 그대로 둡니다. 수원지·배수지는 옮기지 않습니다. 도로 자료: OpenStreetMap.
+        절점과, 도로로 돌아가면 1.5배 넘게 길어지는 관로(논·산을 가로지르는 관로)는 그대로 둡니다. 수원지·배수지는 옮기지 않습니다. 도로 자료: 브이월드 수치지도 도로중심선(안 되면 OpenStreetMap).
       </Note>
       <div className="mt-2 flex items-center gap-2">
         <Button onClick={() => void analyze()} disabled={busy}>

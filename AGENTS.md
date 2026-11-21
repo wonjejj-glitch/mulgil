@@ -302,3 +302,6 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
 
 ## 엔진 검증
 `.github/workflows/verify-engines.yml`(손으로 실행)이 물길 해석 경로(`src/verify/engineCompare.test.ts`, 평소 테스트에서는 건너뜀)와 공식 엔진(`verify/ref_epanet.py` = OWA-EPANET 2.3·EPA EPANET 2.2 툴킷, `verify/ref_swmm.py` = swmm-toolkit EPA SWMM 5.2.4)을 비교해 `verify/report.py` 로 표를 만든다. 결과와 해설은 `verify/README.md`. 이 PC 는 앱 제어 정책이 swmm-toolkit 의 네이티브 모듈을 막아 SWMM 비교는 CI 에서만 된다.
+
+## 국내 자료 우선
+도로(`app/osmRoads.ts` `fetchRoads`): 넣은 파일 → 브이월드 `LT_L_N3A0020000`(수치지도 1:5,000 도로중심선, 0.01° 칸별 JSONP) → Overpass(OSM). 캐시 DB 는 'mulgil-roads-2'(출처 포함). 건물: 브이월드 → OSM. 배경지도 기본값: 키가 있으면 'vworld-base'(저장 형식 v2, 예전 기본값 'osm' 은 한 번 바꿈). 지형 높이(`core/terrain/elevation.ts`)는 아직 AWS Terrarium 타일 — 국내 공개 DEM 타일 API 가 없어서.

@@ -91,7 +91,7 @@ function DraftDialog() {
       widthClass="w-[760px]"
       footer={
         <>
-          <span className="mr-auto text-[11px] text-ink-muted">도로 자료: OpenStreetMap (영역 경계 좌표만 보냄) · 지반고: 온라인 지형 타일</span>
+          <span className="mr-auto text-[11px] text-ink-muted">도로 자료: 브이월드 수치지도 도로중심선(안 되면 OpenStreetMap, 영역 경계 좌표만 보냄) · 지반고: 온라인 지형 타일</span>
           <Button onClick={close}>닫기</Button>
         </>
       }
@@ -298,14 +298,14 @@ function DraftDialog() {
               if (files.length) void loadRoadFiles(files);
             }}
           />
-          <span className="text-[11px] text-ink-soft">{s.roadFile || '없음 → OpenStreetMap 공개 서버에서 받음'}</span>
+          <span className="text-[11px] text-ink-soft">{s.roadFile || '없음 → 브이월드 수치지도 도로중심선(1:5,000)에서 받음 (안 되면 OpenStreetMap)'}</span>
           {s.roadFile && (
             <button type="button" className="text-[11px] text-accent hover:underline" onClick={clearRoadFiles}>
               지우기
             </button>
           )}
         </div>
-        <Note>공개 도로 서버가 바쁘거나 도로가 빠진 곳은 도로명주소 전자지도의 도로구간(도로중심선)이나 수치지도 도로 레이어를 넣으세요. 넣으면 그 자료만 씁니다.</Note>
+        <Note>기본은 브이월드의 국토지리정보원 수치지도(1:5,000) 도로중심선입니다(골목까지 있음). 사업용 최신 도로 자료가 따로 있으면 넣으세요. 넣으면 그 자료만 씁니다.</Note>
       </section>
 
       <section className="mt-4 border-t border-line pt-3">

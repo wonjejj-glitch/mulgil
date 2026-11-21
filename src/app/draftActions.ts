@@ -24,7 +24,7 @@ import { adoptModel, fitToNetwork } from './actions';
 import { readBackup } from './autoBackup';
 import { getViewBounds } from './mapView';
 import { BUILDING_SOURCE_LABEL, fetchMapBuildings } from './mapBuildings';
-import { fetchOsmRoads, setUserRoads } from './osmRoads';
+import { fetchRoads, lastRoadSource, ROAD_SOURCE_LABEL, setUserRoads } from './osmRoads';
 import { applyBusinessRatio, DEFAULT_WATER_DEMAND, estimateBuildings } from '../core/model/buildingEstimate';
 import { sampleTerrainTiles } from './terrainFetch';
 
@@ -220,9 +220,11 @@ export async function generateDraft(): Promise<void> {
     const box = bboxOf([...customers.map((c) => c.position), source, ...reach])!;
     const padLat = 400 / 110540;
     const padLng = 400 / (111320 * Math.cos((box[1] * Math.PI) / 180));
-    store.set({ busy: '도로 자료(OpenStreetMap) 받는 중…' });
-    const roads = await fetchOsmRoads(box[1] - padLat, box[0] - padLng, box[3] + padLat, box[2] + padLng);
+    store.set({ busy: '도로 자료 받는 중…' });
+    const roads = await fetchRoads(box[1] - padLat, box[0] - padLng, box[3] + padLat, box[2] + padLng);
     if (roads.length === 0) throw new Error('이 영역의 도로 자료가 없습니다.');
+    const roadSource = lastRoadSource();
+    if (roadSource) warnings.push(`도로 자료: ${ROAD_SOURCE_LABEL[roadSource]}${roadSource === 'osm' ? ' (브이월드에 연결하지 못했거나 인증키가 없음 — 빠진 골목이 있을 수 있습니다)' : ''}.`);
     const options = { ...defaultDraftOptions(mode, source), maxServiceDistance, maxPipeLength, seeds };
     const prepared = prepareRoads(roads, source, options.spacing);
     let ground: number[] | undefined;

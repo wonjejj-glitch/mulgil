@@ -81,14 +81,21 @@ interface PersistedUI {
   basemapGray: boolean;
 }
 
+/** 저장 형식 판. 2 부터 기본 배경지도가 브이월드 (키가 들어 있는 배포판). */
+const PERSIST_VERSION = 2;
+
 function loadPersisted(): PersistedUI {
-  const fallback: PersistedUI = { basemap: 'osm', vworldKey: BUILT_IN_VWORLD_KEY, basemapDim: 1, basemapGray: false };
+  // 한국 지도는 브이월드가 자세하므로 키가 있으면 브이월드 일반지도를 기본으로 (개발 PC 처럼 키가 없으면 OpenStreetMap)
+  const defaultBasemap: BasemapId = BUILT_IN_VWORLD_KEY ? 'vworld-base' : 'osm';
+  const fallback: PersistedUI = { basemap: defaultBasemap, vworldKey: BUILT_IN_VWORLD_KEY, basemapDim: 1, basemapGray: false };
   try {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return fallback;
-    const parsed = JSON.parse(raw) as Partial<PersistedUI>;
+    const parsed = JSON.parse(raw) as Partial<PersistedUI> & { v?: number };
+    // 예전 판의 'osm' 은 대부분 고른 것이 아니라 그때 기본값이었으므로 한 번만 새 기본값으로 바꾼다
+    const legacyDefault = (parsed.v ?? 1) < PERSIST_VERSION && parsed.basemap === 'osm';
     return {
-      basemap: parsed.basemap ?? fallback.basemap,
+      basemap: legacyDefault || !parsed.basemap ? fallback.basemap : parsed.basemap,
       vworldKey: typeof parsed.vworldKey === 'string' && parsed.vworldKey ? parsed.vworldKey : BUILT_IN_VWORLD_KEY,
       basemapDim: typeof parsed.basemapDim === 'number' ? parsed.basemapDim : 1,
       basemapGray: parsed.basemapGray === true,
@@ -100,7 +107,7 @@ function loadPersisted(): PersistedUI {
 
 function persist(value: PersistedUI): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...value, v: PERSIST_VERSION }));
   } catch {
     // 저장소를 쓸 수 없는 환경(사생활 보호 모드 등)에서는 조용히 건너뛴다.
   }

@@ -168,3 +168,30 @@ export async function fetchBuildingsBox(key: string, box: [number, number, numbe
   }
   return out;
 }
+
+/* ------------------------------------------------------------------ 도로 중심선 (관망 초안·위치 보정용) */
+
+/** 국토지리정보원 수치지도(1:5,000) 도로중심선. 골목까지 있고 도로 폭이 들어 있다. */
+export const VWORLD_ROAD_LAYER = 'LT_L_N3A0020000';
+
+/** 사각형 범위 안의 도로중심선(선 목록, 경위도). 한 번에 1000개, 최대 maxPages 쪽. */
+export async function fetchRoadsBox(key: string, box: [number, number, number, number], maxPages = 20): Promise<LngLat[][]> {
+  const [w, s, e, n] = box.map((v) => v.toFixed(6));
+  const out: LngLat[][] = [];
+  let pages = 1;
+  for (let page = 1; page <= pages && page <= maxPages; page++) {
+    const url =
+      `https://api.vworld.kr/req/data?service=data&request=GetFeature&data=${VWORLD_ROAD_LAYER}&format=json&crs=EPSG:4326&geometry=true&attribute=false&size=1000` +
+      `&page=${page}&geomFilter=BOX(${w},${s},${e},${n})&key=${encodeURIComponent(key)}&domain=${encodeURIComponent(location.origin)}`;
+    const r = (await jsonp<VworldResponse>(url)).response;
+    if (r.status === 'NOT_FOUND') break;
+    if (r.status !== 'OK') throw new Error(`브이월드 도로 조회 실패: ${r.error?.text ?? r.status}`);
+    for (const f of r.result?.featureCollection?.features ?? []) {
+      const g = f.geometry as unknown as { type: string; coordinates: number[][] | number[][][] };
+      const lines = g.type === 'MultiLineString' ? (g.coordinates as number[][][]) : g.type === 'LineString' ? [g.coordinates as number[][]] : [];
+      for (const line of lines) if (line.length >= 2) out.push(line.map((c): LngLat => [c[0], c[1]]));
+    }
+    pages = Number(r.page?.total ?? 1) || 1;
+  }
+  return out;
+}

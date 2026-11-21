@@ -2,11 +2,11 @@ import type { StyleSpecification } from 'maplibre-gl';
 import type { BasemapId } from '../../store/useUIStore';
 
 export const BASEMAP_OPTIONS: { id: BasemapId; label: string; needsKey?: boolean }[] = [
-  { id: 'osm', label: '일반지도 (OpenStreetMap)' },
-  { id: 'satellite', label: '위성지도 (Esri)' },
   { id: 'vworld-base', label: '브이월드 일반', needsKey: true },
   { id: 'vworld-satellite', label: '브이월드 위성', needsKey: true },
   { id: 'vworld-hybrid', label: '브이월드 위성+주기', needsKey: true },
+  { id: 'osm', label: '일반지도 (OpenStreetMap)' },
+  { id: 'satellite', label: '위성지도 (Esri)' },
   { id: 'none', label: '배경 없음' },
 ];
 
