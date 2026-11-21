@@ -194,4 +194,22 @@ describe('writeInp', () => {
     const trace = parseInp('[OPTIONS]\n Quality Trace R1\n[END]').model.options.quality;
     expect(trace).toMatchObject({ mode: 'TRACE', traceNode: 'R1' });
   });
+
+  it('숫자 ID 도 원본 파일 순서대로 다시 쓴다 (엔진이 원본과 같은 순서로 풀게)', () => {
+    const text = [
+      '[JUNCTIONS]', '30 10 1', '4 10 1', '115 10 1',
+      '[RESERVOIRS]', '9 50',
+      '[PIPES]', '77 9 30 100 200 100', '5 30 4 100 150 100', '210 4 115 100 100 100',
+      '[COORDINATES]', '30 0 0', '4 10 0', '115 20 0', '9 -10 0',
+      '[END]',
+    ].join('\n');
+    const out = writeInp(parseInp(text).model);
+    const ids = (sec: string) => {
+      const block = out.split(`[${sec}]`)[1].split('[')[0];
+      return block.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith(';')).map((l) => l.split(/\s+/)[0]);
+    };
+    expect(ids('JUNCTIONS')).toEqual(['30', '4', '115']);
+    expect(ids('PIPES')).toEqual(['77', '5', '210']);
+  });
 });
+

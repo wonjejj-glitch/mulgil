@@ -75,8 +75,10 @@ export function writeInp(model: NetworkModel, options: WriteInpOptions = {}): st
     out.push('');
   };
 
-  const nodes = Object.values(model.nodes);
-  const links = Object.values(model.links);
+  // 원본 파일 순서대로 (숫자 ID 는 객체에서 숫자순으로 바뀌므로). 순서가 없는(나중에 추가한) 것은 뒤에 둔다. sort 는 안정 정렬.
+  const bySeq = <T extends { seq?: number }>(list: T[]) => list.sort((a, b) => (a.seq ?? Infinity) - (b.seq ?? Infinity));
+  const nodes = bySeq(Object.values(model.nodes));
+  const links = bySeq(Object.values(model.links));
 
   section('TITLE', null, model.title.slice(0, 3));
 

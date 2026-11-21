@@ -26,6 +26,11 @@ export interface QualitySource {
 
 interface NodeBase {
   id: string;
+  /**
+   * 원본 .inp 에서의 순서. 숫자처럼 생긴 ID 는 객체 키로 쓰면 숫자순으로 다시 정렬되므로, 내보낼 때 이 순서로 되돌려
+   * 엔진이 원본과 같은 순서로 풀게 한다(허용오차 안의 미세한 차이까지 원본과 같아진다). 나중에 추가한 것은 없음 → 맨 뒤.
+   */
+  seq?: number;
   position: LngLat;
   /** 절점·배수지는 지반/바닥 표고, 수원지는 총수두(Total Head). */
   elevation: number;
@@ -64,6 +69,8 @@ export type NetworkNode = Junction | Reservoir | Tank;
 
 interface LinkBase {
   id: string;
+  /** 원본 .inp 에서의 순서 (NodeBase.seq 참고). */
+  seq?: number;
   startNodeId: string;
   endNodeId: string;
   /** 시점·종점 사이의 중간 꺾임점. */

@@ -158,6 +158,8 @@ export function parseInp(text: string, options: ParseInpOptions = {}): ParseInpR
   const model = createEmptyModel();
   model.title = [];
   const warnings: string[] = [];
+  /** 원본 파일에서의 절점·링크 순서 (내보낼 때 되살린다) */
+  let seq = 0;
   const coords = new Map<string, [number, number]>();
   const vertexMap = new Map<string, [number, number][]>();
   const demandMap = new Map<string, DemandEntry[]>();
@@ -189,6 +191,7 @@ export function parseInp(text: string, options: ParseInpOptions = {}): ParseInpR
       case 'JUNCTIONS':
         model.nodes[tok[0]] = {
           id: tok[0],
+          seq: seq++,
           type: 'junction',
           position: [NaN, NaN],
           elevation: num(tok[1]),
@@ -199,6 +202,7 @@ export function parseInp(text: string, options: ParseInpOptions = {}): ParseInpR
       case 'RESERVOIRS':
         model.nodes[tok[0]] = {
           id: tok[0],
+          seq: seq++,
           type: 'reservoir',
           position: [NaN, NaN],
           elevation: num(tok[1]),
@@ -208,6 +212,7 @@ export function parseInp(text: string, options: ParseInpOptions = {}): ParseInpR
       case 'TANKS':
         model.nodes[tok[0]] = {
           id: tok[0],
+          seq: seq++,
           type: 'tank',
           position: [NaN, NaN],
           elevation: num(tok[1]),
@@ -226,6 +231,7 @@ export function parseInp(text: string, options: ParseInpOptions = {}): ParseInpR
         const statusInSeventh = tok[6] !== undefined && PIPE_STATUS_KEYWORD.test(tok[6]);
         model.links[tok[0]] = {
           id: tok[0],
+          seq: seq++,
           type: 'pipe',
           startNodeId: tok[1],
           endNodeId: tok[2],
@@ -255,6 +261,7 @@ export function parseInp(text: string, options: ParseInpOptions = {}): ParseInpR
         }
         model.links[tok[0]] = {
           id: tok[0],
+          seq: seq++,
           type: 'pump',
           startNodeId: tok[1],
           endNodeId: tok[2],
@@ -271,6 +278,7 @@ export function parseInp(text: string, options: ParseInpOptions = {}): ParseInpR
         const valveType = (tok[4] ?? 'PRV').toUpperCase();
         model.links[tok[0]] = {
           id: tok[0],
+          seq: seq++,
           type: 'valve',
           startNodeId: tok[1],
           endNodeId: tok[2],
