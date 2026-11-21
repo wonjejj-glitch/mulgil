@@ -1,5 +1,5 @@
 /** 하단 '설계기준 검토' 탭: 수압·유속 기준 위반 목록과 수원별 물수지. */
-import { SquareDashedMousePointer } from 'lucide-react';
+import { Gauge, SquareDashedMousePointer } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { checkCriteria, CRITERIA_LABELS, defaultCriteria, waterBalance, type CriteriaHit, type CriteriaKind, type WaterCriteria } from '../../core/engine/criteria';
 import { linkPath } from '../../core/model/networkEdit';
@@ -84,6 +84,14 @@ export function CriteriaPanel() {
             title="목록의 객체를 모두 선택해 지도에 강조합니다"
           >
             <SquareDashedMousePointer size={12} /> 지도에 모두 표시
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!hits.some((h) => h.kind === 'lowPressure' || h.kind === 'highPressure')}
+            onClick={() => useUIStore.getState().openModal('pressureFix')}
+            title="수압 기준을 벗어난 구역마다 감압밸브(설정압)·가압펌프(양정·유량·동력)와 블록 경계 제수밸브 후보를 제안하고, 적용해 다시 해석합니다"
+          >
+            <Gauge size={12} /> 감압·가압 후보 제안
           </Button>
         </div>
         <p className="mt-1 text-[10px] text-ink-muted">

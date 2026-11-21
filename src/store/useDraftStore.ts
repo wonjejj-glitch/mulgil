@@ -4,6 +4,7 @@ import { DEFAULT_SEWER_DRAFT, DEFAULT_WATER_DRAFT, type SewerDraftOptions, type 
 import type { AllocationResult, LandParcel } from '../core/model/landUse';
 import type { DraftMode, DraftResult } from '../core/model/networkDraft';
 import type { LngLat } from '../core/model/types';
+import type { GroundPoint, ReservoirSuggestion } from '../core/model/siteSuggest';
 import type { ImportCrsChoice } from '../utils/geoMath';
 
 /** 수용가 CSV → 관망 초안 / 용도지역 분담유량 화면의 상태 (대화상자를 닫았다 열어도 유지). */
@@ -40,6 +41,8 @@ interface DraftState {
   removed: Customer[][];
   /** 직접 뺀 수용가 ID — 지도 건물을 다시 읽어도 넣지 않는다 */
   excluded: string[];
+  /** 배수지(상수)·방류구(하수) 후보 */
+  sites: { kind: 'reservoir'; result: ReservoirSuggestion } | { kind: 'outfall'; list: (GroundPoint & { kind: 'edge' | 'customer' })[] } | null;
   water: WaterDraftOptions;
   sewer: SewerDraftOptions;
   result: DraftResult | null;
@@ -83,6 +86,7 @@ export const useDraftStore = create<DraftState>()((set) => ({
   mapTool: null,
   removed: [],
   excluded: [],
+  sites: null,
   water: { ...DEFAULT_WATER_DRAFT },
   sewer: { ...DEFAULT_SEWER_DRAFT },
   result: null,

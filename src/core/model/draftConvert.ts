@@ -21,6 +21,8 @@ export interface WaterDraftOptions {
   roughness: number;
   /** 수원 수위 = 수원 지반고 + 이 값 (m). */
   sourceHeadAboveGround: number;
+  /** 배수지 고수위(절대 표고, m). 있으면 위 값 대신 쓴다 (배수지 후보·실제 배수지 자료). */
+  sourceHwl?: number | null;
 }
 
 export const DEFAULT_WATER_DRAFT: WaterDraftOptions = { peakFactor: 1.5, designVelocity: 1.0, minDiameter: 80, roughness: 110, sourceHeadAboveGround: 30 };
@@ -44,7 +46,7 @@ export function draftToWaterModel(draft: DraftResult, o: WaterDraftOptions, titl
     if (nd.isSource) {
       const id = 'R1';
       ids.set(nd.key, id);
-      model.nodes[id] = { id, type: 'reservoir', position: nd.position, elevation: Math.round((ground + o.sourceHeadAboveGround) * 100) / 100, pattern: '' };
+      model.nodes[id] = { id, type: 'reservoir', position: nd.position, elevation: Math.round((o.sourceHwl ?? ground + o.sourceHeadAboveGround) * 100) / 100, pattern: '' };
     } else {
       const id = `J${++j}`;
       ids.set(nd.key, id);

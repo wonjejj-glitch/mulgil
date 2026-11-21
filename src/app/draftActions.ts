@@ -27,6 +27,7 @@ import { BUILDING_SOURCE_LABEL, fetchMapBuildings } from './mapBuildings';
 import { fetchRoads, lastRoadSource, ROAD_SOURCE_LABEL, setUserRoads } from './osmRoads';
 import { applyBusinessRatio, DEFAULT_WATER_DEMAND, estimateBuildings } from '../core/model/buildingEstimate';
 import { sampleTerrainTiles } from './terrainFetch';
+import { edgeAround, gridAround, suggestOutfallSites, suggestReservoirSites } from '../core/model/siteSuggest';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -67,6 +68,7 @@ export function applyCustomerMapping(patch?: { mapping?: ColumnMapping; crs?: Im
       // 새 수용가 파일: 앞서 뺀 목록은 다른 자료의 것이므로 비운다
       removed: [],
       excluded: [],
+      sites: null,
       skipped,
       crsLabel: resolved.label,
       result: null,
@@ -115,6 +117,7 @@ export async function loadCustomersFromMap(): Promise<void> {
       fileName: '',
       customers,
       removed: [],
+      sites: null,
       skipped: [],
       crsLabel: 'WGS84 경위도 (지도)',
       result: null,
@@ -200,11 +203,72 @@ export function clearDraftArea(): void {
   useDraftStore.getState().set({ area: null });
 }
 
+/**
+ * 수용가 범위 주변에서 배수지(상수) 또는 방류구(하수) 후보를 찾는다. 지반고는 온라인 지형 타일.
+ * 배수지: 모든 수용가에 최소 수압을 자연유하로 줄 수 있는 높은 땅 + 필요 고수위 + 유효용량(계획 1일 최대의 12시간분).
+ * 방류구: 범위 가장자리·수용가 중 가장 낮은 곳.
+ */
+export async function suggestDraftSites(): Promise<void> {
+  const store = useDraftStore.getState();
+  if (store.busy || store.customers.length === 0) return;
+  const positions = store.customers.map((c) => c.position);
+  const box = bboxOf(positions);
+  if (!box) return;
+  store.set({ busy: '후보 자리 지반고 읽는 중…', error: null, sites: null });
+  try {
+    const progress = (d: number, t: number) => useDraftStore.getState().set({ busy: `후보 자리 지형 타일 ${d}/${t}…` });
+    const cz = await sampleTerrainTiles(positions, progress);
+    if (store.mode === 'water') {
+      const grid = gridAround(box, 1500, 2500);
+      const gz = await sampleTerrainTiles(grid, progress);
+      const result = suggestReservoirSites(
+        store.customers.map((c, i) => ({ position: c.position, ground: cz[i], demand: c.demand })),
+        grid.map((p, i) => ({ position: p, ground: gz[i] })),
+      );
+      useDraftStore.getState().set({ sites: { kind: 'reservoir', result } });
+    } else {
+      const edge = edgeAround(box, 200, 50);
+      const ez = await sampleTerrainTiles(edge, progress);
+      const list = suggestOutfallSites([
+        ...edge.map((p, i) => ({ position: p, ground: ez[i], kind: 'edge' as const })),
+        ...store.customers.map((c, i) => ({ position: c.position, ground: cz[i], kind: 'customer' as const })),
+      ]);
+      useDraftStore.getState().set({ sites: { kind: 'outfall', list } });
+    }
+  } catch (e) {
+    useDraftStore.getState().set({ error: `후보 자리를 찾지 못했습니다: ${errorText(e)}` });
+  } finally {
+    useDraftStore.getState().set({ busy: null });
+  }
+}
+
+/** 후보 자리를 수원(배수지)·방류구로 쓴다. 배수지는 후보 고수위도 함께 넣는다 (가압 후보면 필요 수위). */
+export function applyDraftSite(index: number | 'booster'): void {
+  const s = useDraftStore.getState();
+  const sites = s.sites;
+  if (!sites) return;
+  if (sites.kind === 'reservoir') {
+    const r = sites.result;
+    const pick = index === 'booster' ? r.booster : r.sites[index];
+    if (!pick) return;
+    const hwl = index === 'booster' && r.booster ? r.booster.hwl + r.booster.head : (pick as { hwl: number }).hwl;
+    s.set({ source: pick.position, sourceAuto: false, result: null, water: { ...s.water, sourceHwl: Math.round(hwl * 10) / 10 } });
+  } else {
+    const pick = typeof index === 'number' ? sites.list[index] : undefined;
+    if (!pick) return;
+    s.set({ source: pick.position, sourceAuto: false, result: null });
+  }
+}
+
 export function pickDraftSource(): void {
   useUIStore.getState().setPointPick({
     label: useDraftStore.getState().mode === 'water' ? '수원(배수지·급수 접속점) 위치' : '방류구(처리장·간선 접속점) 위치',
     returnTo: 'draft',
-    onPick: (p) => useDraftStore.getState().set({ source: p, sourceAuto: false, result: null }),
+    onPick: (p) => {
+      const d = useDraftStore.getState();
+      // 직접 찍은 자리: 후보 고수위는 버리고 '수원 수위(지반+m)'를 쓴다
+      d.set({ source: p, sourceAuto: false, result: null, water: { ...d.water, sourceHwl: null } });
+    },
   });
 }
 

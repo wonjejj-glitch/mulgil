@@ -37,6 +37,7 @@ const NetworkToolsModal = lazy(() => import('./components/modals/NetworkBuildMod
 const LandModal = lazy(() => import('./components/modals/LandModal').then((m) => ({ default: m.LandModal })));
 const WaterDemandModal = lazy(() => import('./components/modals/WaterDemandModal').then((m) => ({ default: m.WaterDemandModal })));
 const SewageModal = lazy(() => import('./components/modals/SewageModal').then((m) => ({ default: m.SewageModal })));
+const PressureFixModal = lazy(() => import('./components/modals/PressureFixModal').then((m) => ({ default: m.PressureFixModal })));
 const SewerGisModal = lazy(() => import('./components/modals/SewerGisModal').then((m) => ({ default: m.SewerGisModal })));
 
 function ModalHost() {
@@ -57,6 +58,7 @@ function ModalHost() {
       {modal === 'sewage' && <SewageModal />}
       {modal === 'waterDemand' && <WaterDemandModal />}
       {modal === 'land' && <LandModal />}
+      {modal === 'pressureFix' && <PressureFixModal />}
     </Suspense>
   );
 }

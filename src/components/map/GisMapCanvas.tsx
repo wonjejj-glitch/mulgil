@@ -177,6 +177,16 @@ export function GisMapCanvas() {
   const draftResult = useDraftStore((s) => (s.overlay ? s.result : null));
   const draftSource = useDraftStore((s) => (s.overlay ? s.source : null));
   const draftArea = useDraftStore((s) => (s.overlay ? s.area : null));
+  const draftSites = useDraftStore((s) => (s.overlay ? s.sites : null));
+  const siteMarks = useMemo(
+    () =>
+      !draftSites
+        ? []
+        : draftSites.kind === 'reservoir'
+          ? [...draftSites.result.sites.map((x, i) => ({ position: x.position, label: String(i + 1) })), ...(draftSites.result.booster ? [{ position: draftSites.result.booster.position, label: 'P' }] : [])]
+          : draftSites.list.map((x, i) => ({ position: x.position, label: String(i + 1) })),
+    [draftSites],
+  );
   const thematic = useThematic();
   const profilePath = useProfilePath();
   const profile = useMemo(
@@ -237,8 +247,8 @@ export function GisMapCanvas() {
   const styleKey = `${revision}:${resultsRevision}:${stepIndex}:${nodeTheme}:${linkTheme}`;
   const swmmStyleKey = `${swmmRun ? 'r' : 'n'}:${swmmPeriod}:${swmmThematic?.nodeScale?.title}:${swmmThematic?.linkScale?.title}:${swmmProject?.nodes.length}`;
   const draftLayers = useMemo(
-    () => buildDraftLayers(draftCustomers, draftResult, draftSource, deckEpoch, draftArea),
-    [draftCustomers, draftResult, draftSource, deckEpoch, draftArea],
+    () => buildDraftLayers(draftCustomers, draftResult, draftSource, deckEpoch, draftArea, siteMarks),
+    [draftCustomers, draftResult, draftSource, deckEpoch, draftArea, siteMarks],
   );
   const sewerLayers = useMemo(
     () =>

@@ -1,7 +1,7 @@
 /**
  * 대화상자 3종: 수용가 CSV → 관망 초안 / 용도지역 분담유량 / 관망 정리 도구.
  */
-import { Crosshair, Download, Eraser, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, SquareDashed, TriangleExclamationPoint, Wand2 } from 'lucide-react';
+import { Crosshair, Download, Eraser, Mountain, FileUp, GitMerge, Hash, LoaderCircle, Map as MapIcon, MapPinned, Send, Spline, SquareDashed, TriangleExclamationPoint, Wand2 } from 'lucide-react';
 import { useRef, useState, type ReactNode } from 'react';
 import {
   addFillToNetwork,
@@ -23,6 +23,8 @@ import {
   setUseKey,
   loadCustomersFromMap,
   startDraftAreaTool,
+  suggestDraftSites,
+  applyDraftSite,
   startEraseTool,
   restoreErased,
   clearDraftArea,
@@ -255,11 +257,20 @@ function DraftDialog() {
               : `${s.source ? '자동으로 정함' : '지정 안 함'} → ${s.mode === 'water' ? '가장 높은' : '가장 낮은'} 수용가 근처 (초안 만들 때마다 다시 정함)`}
           </span>
           {s.source && (
-            <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => s.set({ source: null, sourceAuto: false, result: null })}>
+            <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => s.set({ source: null, sourceAuto: false, result: null, water: { ...s.water, sourceHwl: null } })}>
               지우기
             </button>
           )}
+          <Button
+            disabled={s.busy !== null || s.customers.length === 0}
+            onClick={() => void suggestDraftSites()}
+            title={s.mode === 'water' ? '수용가 주변 땅 높이를 읽어 모든 수용가에 최소 수압을 자연유하로 줄 수 있는 배수지 자리·고수위·용량 후보를 찾습니다' : '범위 가장자리와 수용가 중 가장 낮은 곳을 방류구 후보로 찾습니다'}
+          >
+            <Mountain size={13} />
+            {s.mode === 'water' ? '배수지 후보 찾기' : '방류구 후보 찾기'}
+          </Button>
         </div>
+        <SiteCandidates />
         {s.build !== 'fill' && (!s.source || s.sourceAuto) && (
           <Note tone="warn">
             {s.mode === 'water'
@@ -281,9 +292,20 @@ function DraftDialog() {
             <Field label="조도 C" w="w-20">
               <NumberField value={s.water.roughness} min={1} onCommit={(v) => s.set({ water: { ...s.water, roughness: v } })} />
             </Field>
-            <Field label="수원 수위 (지반+m)" w="w-32">
-              <NumberField value={s.water.sourceHeadAboveGround} onCommit={(v) => s.set({ water: { ...s.water, sourceHeadAboveGround: v } })} />
-            </Field>
+            {s.water.sourceHwl != null ? (
+              <Field label="수원 고수위 (후보, m)" w="w-40">
+                <span className="flex h-7 items-center gap-2 text-ink">
+                  {s.water.sourceHwl.toFixed(1)}
+                  <button type="button" className="text-[11px] text-accent hover:underline" onClick={() => s.set({ water: { ...s.water, sourceHwl: null }, result: null })}>
+                    지반+m 로
+                  </button>
+                </span>
+              </Field>
+            ) : (
+              <Field label="수원 수위 (지반+m)" w="w-32">
+                <NumberField value={s.water.sourceHeadAboveGround} onCommit={(v) => s.set({ water: { ...s.water, sourceHeadAboveGround: v } })} />
+              </Field>
+            )}
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap items-end gap-2">
@@ -383,6 +405,70 @@ function DraftDialog() {
         ))}
       </section>
     </Modal>
+  );
+}
+
+/** 배수지·방류구 후보 목록 (초안 창 2번 구역). */
+function SiteCandidates() {
+  const sites = useDraftStore((s) => s.sites);
+  if (!sites) return null;
+  const fmt = (v: number) => Math.round(v).toLocaleString();
+  if (sites.kind === 'outfall') {
+    return (
+      <div className="mt-2 rounded border border-line bg-raised/40 p-2 text-[11px]">
+        <p className="font-semibold text-ink">방류구 후보 (지도의 보라색 번호)</p>
+        <ul className="mt-1 space-y-0.5">
+          {sites.list.map((c, i) => (
+            <li key={i} className="flex items-center gap-2 text-ink-soft">
+              <span className="w-5 font-semibold text-ink">{i + 1}</span>
+              <span>지반고 {c.ground.toFixed(1)} m · {c.kind === 'edge' ? '범위 가장자리(바깥 200 m)' : '수용가 자리'}</span>
+              <button type="button" className="ml-auto text-accent hover:underline" onClick={() => applyDraftSite(i)}>
+                이 자리 쓰기
+              </button>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-ink-muted">자연유하는 낮은 쪽으로 모입니다. 처리장·기존 간선 접속점이 있으면 그 위치를 찍고, 설계에서 그 관저고를 넣으세요.</p>
+      </div>
+    );
+  }
+  const r = sites.result;
+  return (
+    <div className="mt-2 rounded border border-line bg-raised/40 p-2 text-[11px]">
+      <p className="font-semibold text-ink">배수지 후보 (지도의 보라색 번호)</p>
+      <p className="mt-0.5 text-ink-soft">
+        수용가 {r.customers.toLocaleString()}곳 · 지반고 {r.minGround.toFixed(1)}~{r.maxGround.toFixed(1)} m · 일평균 {fmt(r.dailyAverage)} m³/일 → 계획 1일 최대(×1.3) {fmt(r.dailyMax)} m³/일 ·{' '}
+        <b className="text-ink">배수지 유효용량 약 {fmt(r.volume)} m³</b> (12시간분)
+      </p>
+      {r.sites.length > 0 ? (
+        <ul className="mt-1 space-y-0.5">
+          {r.sites.map((c, i) => (
+            <li key={i} className="flex flex-wrap items-center gap-x-2 text-ink-soft">
+              <span className="w-5 font-semibold text-ink">{i + 1}</span>
+              <span>
+                지반고 {c.ground.toFixed(1)} m · <b className="text-ink">고수위 {c.hwl.toFixed(1)} m</b> (필요 {c.requiredHwl.toFixed(1)} m) · 수요 중심까지 {c.distanceKm.toFixed(1)} km · 가장 낮은 곳 정수압 {c.maxStaticPressure.toFixed(0)} m
+                {c.needsPrv && <span className="text-amber-300"> — 낮은 곳 감압 필요</span>}
+              </span>
+              <button type="button" className="ml-auto text-accent hover:underline" onClick={() => applyDraftSite(i)}>
+                이 자리 쓰기
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : r.booster ? (
+        <p className="mt-1 text-amber-300">
+          주변에 자연유하로 모든 수용가에 최소 수압을 줄 만큼 높은 땅이 없습니다. 가장 덜 모자란 곳(P, 지반고 {r.booster.ground.toFixed(1)} m)에 배수지를 두면 가압 양정 약 {r.booster.head.toFixed(1)} m 가 필요합니다.{' '}
+          <button type="button" className="text-accent hover:underline" onClick={() => applyDraftSite('booster')}>
+            이 자리 쓰기(필요 수위로)
+          </button>
+        </p>
+      ) : (
+        <p className="mt-1 text-ink-muted">후보를 찾지 못했습니다(지형 자료 없음).</p>
+      )}
+      <p className="mt-1 text-ink-muted">
+        필요 고수위 = 수용가 지반고 + 최소 수압 15.3 m + 거리 1 km 당 2 m(개략 손실수두)의 최댓값, 배수지 깊이 5 m 가정. 땅 쓰임(산림·사유지·도시계획)은 모르므로 현장·도면으로 확인하고, 실제 배수지 자료가 있으면 그것을 쓰세요.
+      </p>
+    </div>
   );
 }
 

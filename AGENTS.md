@@ -308,3 +308,8 @@ public/samples/                   # sample-district.inp(정상), sample-errors.i
 
 ## 관망 초안 지도 도구
 `components/map/DraftMapTool.tsx`: `useDraftStore.mapTool` 이 'area'(끌어서 네모 → `applyDraftArea`) 또는 'erase'(클릭 12 px 안 가장 가까운 수용가 / 끌기 네모 안 전부 → `eraseCustomers`, Ctrl+Z `undoErase`)이면 지도 끌기를 끄고 캔버스 mousedown 을 가로챈다. GisMapCanvas 의 onMouseDown·onClick 은 도구 중엔 무시. 뺀 ID 는 `excluded` 로 남아 지도 건물을 다시 읽어도 빠지고, CSV 를 새로 읽으면 비운다.
+
+## 감압·가압 후보, 배수지·방류구 후보
+- `core/engine/pressureFix.ts`: `proposePressureFixes`(전 시간 최고·최저 수압 → 기준 밖 절점을 열린 관로로 묶은 구역 → 유입량이 가장 큰 경계관에 PRV/가압펌프, 나머지 유입관은 닫힘 후보. PRV 설정 = 구역 최저 표고 + (최대 기준 − 여유), 단 높은 곳 최소 수압(+2 m)을 지키는 수두 이상. 유입량 > 2 × 구역 첨두 수요면 주관로 구역 → recommended=false. 가압 용량 = 구역 첨두 수요, 수요 0 구역은 제외), `applyPressureFixes`(유입관의 구역 쪽 끝 가까이 새 절점 PRV_/BP_ + 밸브·펌프, 펌프는 1점 양정곡선 `<id>_H`, 관 연장 유지). 화면은 `components/modals/PressureFixModal.tsx`(모달 'pressureFix', 설계기준 검토 탭 단추) — 적용 후 runSimulation 으로 다시 해석해 전·후 위반 수 비교. 1.5만 절점 실관망 시험: 추천 13개 적용 시 고수압 455→314, 저수압 53→47. 추천 아닌 후보까지 모두 넣으면 EPANET 110 이 날 수 있어 화면이 실패를 알린다.
+- `core/model/siteSuggest.ts`: `suggestReservoirSites`(필요 고수위 = max(수용가 지반 + 최소 수압 + 2 m/km × 거리), 후보 땅 지반 + 5 m ≥ 필요면 가능, 남는 높이 + 5 × 거리(km) 작은 순 400 m 간격 3곳, 없으면 가압 양정; 용량 = 일평균 × 1.3 × 12/24), `suggestOutfallSites`(가장자리·수용가 중 낮은 곳 300 m 간격 3곳), `gridAround`·`edgeAround`. `draftActions.suggestDraftSites`·`applyDraftSite`, `useDraftStore.sites`, `WaterDraftOptions.sourceHwl`(있으면 지반+m 대신 절대 고수위), 지도는 draftLayers 의 보라색 번호.
+

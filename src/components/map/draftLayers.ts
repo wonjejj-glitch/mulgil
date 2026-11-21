@@ -1,6 +1,6 @@
 /** 관망 초안 미리보기: 수용가 점(연결됨/빠짐), 초안 관로, 수원·방류구. */
 import type { Layer } from '@deck.gl/core';
-import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import type { Customer } from '../../core/io/customerCsv';
 import type { DraftLink, DraftResult } from '../../core/model/networkDraft';
 import type { LngLat } from '../../core/model/types';
@@ -11,8 +11,36 @@ export function buildDraftLayers(
   source: LngLat | null,
   epoch: number,
   area: [number, number, number, number] | null = null,
+  sites: { position: LngLat; label: string }[] = [],
 ): Layer[] {
   const layers: Layer[] = [];
+  if (sites.length > 0) {
+    layers.push(
+      new ScatterplotLayer<{ position: LngLat; label: string }>({
+        id: `draft-sites-${epoch}`,
+        data: sites,
+        getPosition: (p) => p.position,
+        getFillColor: [190, 120, 255, 230],
+        getRadius: 11,
+        radiusUnits: 'pixels',
+        stroked: true,
+        getLineColor: [255, 255, 255, 255],
+        lineWidthMinPixels: 2,
+        pickable: false,
+      }),
+      new TextLayer<{ position: LngLat; label: string }>({
+        id: `draft-sites-label-${epoch}`,
+        data: sites,
+        getPosition: (p) => p.position,
+        getText: (p) => p.label,
+        getSize: 12,
+        getColor: [255, 255, 255, 255],
+        characterSet: 'auto',
+        fontWeight: 700,
+        pickable: false,
+      }),
+    );
+  }
   if (area) {
     const [w, s, e, n] = area;
     layers.push(
