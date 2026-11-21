@@ -1,0 +1,100 @@
+# 엔진 검증: 물길 해석 결과를 공식 엔진(EPANET 2.3·EPA EPANET 2.2·EPA SWMM 5.2)과 비교한다. 손으로만 실행 (Actions → verify-engines → Run).
+# 결과: 작업 요약(Summary)의 비교표와 'engine-verification' 아티팩트(report.md, compare.json, 공식 엔진 결과).
+name: verify-engines
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  swmm-wasm:
+    name: SWMM 5.2.4 → WASM (배포와 같은 빌드)
+    runs-on: ubuntu-latest
+    container: emscripten/emsdk:3.1.74
+    steps:
+      - name: Download official SWMM 5.2.4 source (USEPA)
+        run: curl -sSL https://github.com/USEPA/Stormwater-Management-Model/archive/refs/tags/v5.2.4.tar.gz | tar xz
+      - name: Compile
+        run: |
+          S=Stormwater-Management-Model-5.2.4/src/solver
+          mkdir -p out
+          emcc -O3 -w -I"$S/include" "$S"/*.c -o out/swmm5.mjs \
+            -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createSwmm \
+            -sENVIRONMENT=web,worker,node -sALLOW_MEMORY_GROWTH=1 -sSTACK_SIZE=1048576 \
+            -sEXPORTED_FUNCTIONS=_swmm_run,_swmm_getVersion \
+            -sEXPORTED_RUNTIME_METHODS=FS,ccall \
+            -sSINGLE_FILE=1 -sFORCE_FILESYSTEM=1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swmm-wasm-verify
+          path: out/swmm5.mjs
+
+  verify:
+    needs: swmm-wasm
+    runs-on: ubuntu-latest
+    env:
+      VERIFY_DIR: ${{ github.workspace }}/verify-work
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/download-artifact@v4
+        with:
+          name: swmm-wasm-verify
+          path: src/core/swmm/engine
+      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Official engines (EPyT = OWA-EPANET 2.3, WNTR = EPA EPANET 2.2, swmm-toolkit = EPA SWMM 5.2)
+        run: pip install -q epyt wntr swmm-toolkit pyswmm
+      - name: Test networks
+        run: |
+          mkdir -p "$VERIFY_DIR"/nets "$VERIFY_DIR"/swmm "$VERIFY_DIR"/ref
+          EPYT=$(python -c "import epyt, os; print(os.path.dirname(epyt.__file__))")
+          PYSWMM=$(python -c "import pyswmm, os; print(os.path.dirname(pyswmm.__file__))")
+          cp "$EPYT"/networks/asce-tf-wdst/Net1.inp "$EPYT"/networks/asce-tf-wdst/Net2.inp "$EPYT"/networks/asce-tf-wdst/Net3.inp "$VERIFY_DIR"/nets/
+          cp public/samples/sample-district.inp "$VERIFY_DIR"/nets/
+          cp public/samples/sample-sewer.inp "$VERIFY_DIR"/swmm/
+          for m in model_full_features model_pump_setting model_storage_pump model_weir_setting model_node_inflows model_lids; do
+            cp "$PYSWMM/tests/data/$m.inp" "$VERIFY_DIR"/swmm/ || true
+          done
+      - name: Mulgil — exported .inp and sewer design input
+        run: npx vitest run src/verify/engineCompare.test.ts
+        env:
+          VERIFY_STAGE: prepare
+      - name: Official engine results
+        run: |
+          OWA=$(python -c "import epyt, os; print(os.path.join(os.path.dirname(epyt.__file__), 'libraries', 'glnx', 'libepanet2.so'))")
+          EPA=$(python -c "import wntr, os; print(os.path.join(os.path.dirname(wntr.__file__), 'epanet', 'libepanet', 'linux-x64', 'libepanet22.so'))")
+          for f in "$VERIFY_DIR"/nets/*.inp; do
+            n=$(basename "$f" .inp)
+            python verify/ref_epanet.py "$OWA" "$f" "$VERIFY_DIR/ref/$n.owa.json"
+            python verify/ref_epanet.py "$EPA" "$f" "$VERIFY_DIR/ref/$n.epa22.json"
+            python verify/ref_epanet.py "$OWA" "$VERIFY_DIR/exported/$n.inp" "$VERIFY_DIR/ref/$n.owa-exported.json"
+          done
+          for f in "$VERIFY_DIR"/swmm/*.inp; do
+            n=$(basename "$f" .inp)
+            python verify/ref_swmm.py "$f" "$VERIFY_DIR/ref/$n.swmm.json" || echo "공식 SWMM 이 $n 을 해석하지 못함 — 건너뜀"
+          done
+      - name: Mulgil vs official
+        run: npx vitest run src/verify/engineCompare.test.ts
+        env:
+          VERIFY_STAGE: compare
+      - name: Report
+        run: |
+          python verify/report.py "$VERIFY_DIR/compare.json" "$VERIFY_DIR/report.md"
+          cat "$VERIFY_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-verification
+          path: |
+            verify-work/report.md
+            verify-work/compare.json
+            verify-work/ref/
+            verify-work/exported/
+            verify-work/swmm/mulgil-design.inp
