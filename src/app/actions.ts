@@ -9,6 +9,7 @@ import {
   simulationManager,
   type SimulationResults,
 } from '../core/engine/simulationManager';
+import { anonymizeInp, PRESENT_TITLE } from '../core/io/inpAnonymize';
 import { parseInp } from '../core/io/inpParser';
 import { networkDxf, networkShapefileZip, type ExportCrs } from '../core/io/gisExport';
 import { linkColumns, linkRows, nodeColumns, nodeRows, tableToCsv } from '../core/engine/resultsExport';
@@ -113,7 +114,7 @@ export function exportResultTables(): void {
 /* ------------------------------------------------------------------ SWMM (우수·하수) */
 
 /** SWMM .inp 를 열어 우수·하수 보기 모드로 들어간다. 상수관망 작업은 그대로 보존된다. */
-export function openSwmmText(text: string, fileName: string): void {
+export function openSwmmText(text: string, fileName: string, present = false): void {
   const project = readSwmmInp(text);
   if (project.nodes.length === 0) throw new Error('좌표가 있는 절점이 없습니다. SWMM [COORDINATES] 섹션을 확인하세요.');
   const ui = useUIStore.getState();
@@ -127,7 +128,7 @@ export function openSwmmText(text: string, fileName: string): void {
   ui.pushToast({
     level: project.warnings.length > 0 ? 'warning' : 'success',
     title: `${fileName} 불러오기 완료 (SWMM)`,
-    message: `절점 ${project.nodes.length}개, 링크 ${project.links.length}개, 유역 ${project.subcatchments.length}개 · 좌표계: ${project.crsLabel}`,
+    message: `절점 ${project.nodes.length}개, 링크 ${project.links.length}개, 유역 ${project.subcatchments.length}개${present ? '' : ` · 좌표계: ${project.crsLabel}`}`,
     details: project.warnings,
   });
 }
@@ -198,7 +199,7 @@ export function adoptModel(model: NetworkModel, fileName: string, crsLabel: stri
   ui.pushToast({
     level: warnings.length > 0 ? 'warning' : 'success',
     title: `${fileName} 불러오기 완료`,
-    message: `절점 ${nodeCount.toLocaleString()}개, 링크 ${linkCount.toLocaleString()}개 · 좌표계: ${crsLabel}`,
+    message: `절점 ${nodeCount.toLocaleString()}개, 링크 ${linkCount.toLocaleString()}개${crsLabel ? ` · 좌표계: ${crsLabel}` : ''}`,
     details: warnings,
   });
 }
@@ -388,12 +389,19 @@ export async function importFile(file: File): Promise<void> {
   try {
     if (lower.endsWith('.inp')) {
       const text = decodeText(await file.arrayBuffer());
+      // 발표용 보기: 제목·주석·태그·지도 글씨를 빼고 한글 이름(지명 등)을 PAT1·CUR1… 로 바꿔 연다 (값·순서는 그대로)
+      const present = ui.presentMode;
       if (looksLikeSwmm(text)) {
-        openSwmmText(text, file.name);
+        if (present) openSwmmText(anonymizeInp(text).text, `${PRESENT_TITLE}.inp`, true);
+        else openSwmmText(text, file.name);
         return;
       }
-      const result = parseInp(text, { crs: ui.importCrs });
+      const result = parseInp(present ? anonymizeInp(text).text : text, { crs: ui.importCrs });
       if (Object.keys(result.model.nodes).length === 0) throw new Error('절점이 하나도 없습니다. EPANET .inp 형식인지 확인하세요.');
+      if (present) {
+        adoptModel(result.model, `${PRESENT_TITLE}.inp`, '', []);
+        return;
+      }
       const warnings = [...result.warnings];
       if (ui.importCrs === 'auto' && result.model.crs.kind === 'epsg') {
         warnings.push('좌표계는 좌표 범위로 추정한 값입니다. 지도 위치가 어긋나면(예: 구 중부원점 EPSG:5174 는 5186 과 남북 약 100 km 차이) 좌측 패널 ‘가져오기 좌표계’에서 지정한 뒤 ‘열린 관망에 지금 적용’을 누르세요.');

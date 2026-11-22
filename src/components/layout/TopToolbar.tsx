@@ -75,6 +75,7 @@ import { useSewerStore } from '../../store/useSewerStore';
 import { useSwmmStore } from '../../store/useSwmmStore';
 import { useNetworkStore } from '../../store/useNetworkStore';
 import { useSimulationStore } from '../../store/useSimulationStore';
+import { PRESENT_TITLE } from '../../core/io/inpAnonymize';
 import { useUIStore, type Domain, type Tool } from '../../store/useUIStore';
 import { useValidationStore } from '../../store/useValidationStore';
 
@@ -243,8 +244,10 @@ export function TopToolbar() {
   const canRedo = sewer ? sewerCanRedo : waterCanRedo;
   const undo = () => (sewer ? useSewerStore.getState().undo() : useNetworkStore.getState().undo());
   const redo = () => (sewer ? useSewerStore.getState().redo() : useNetworkStore.getState().redo());
-  const fileName = sewer ? sewerName : waterFileName;
-  const title = sewer ? sewerName : waterTitle;
+  const present = useUIStore((s) => s.presentMode);
+  // 발표용 보기에서는 파일 이름·제목 대신 '발표용 관망'
+  const fileName = present ? PRESENT_TITLE : sewer ? sewerName : waterFileName;
+  const title = present ? PRESENT_TITLE : sewer ? sewerName : waterTitle;
   const simStatus = useSimulationStore((s) => s.status);
   const progress = useSimulationStore((s) => s.progress);
   const validating = useValidationStore((s) => s.status === 'running');

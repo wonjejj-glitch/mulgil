@@ -59,6 +59,8 @@ export function LeftLayerPanel() {
   const basemapGray = useUIStore((s) => s.basemapGray);
   const setBasemapLook = useUIStore((s) => s.setBasemapLook);
   const setBasemap = useUIStore((s) => s.setBasemap);
+  const presentMode = useUIStore((s) => s.presentMode);
+  const setPresentMode = useUIStore((s) => s.setPresentMode);
   const vworldKey = useUIStore((s) => s.vworldKey);
   const setVworldKey = useUIStore((s) => s.setVworldKey);
   // 공용 기본 키는 화면에 보이지 않게 한다 (화면 녹화·발표 자료에 키가 찍히지 않도록). 사용자가 넣은 자기 키만 보여 준다.
@@ -135,6 +137,15 @@ export function LeftLayerPanel() {
       </Section>
 
       <Section title="배경지도">
+        <label className="mb-1.5 flex cursor-pointer items-start gap-2 rounded border border-line px-1.5 py-1 text-xs text-ink-soft hover:bg-raised">
+          <input type="checkbox" className="mt-0.5 accent-accent" checked={presentMode} onChange={(e) => setPresentMode(e.target.checked)} />
+          <span>
+            <span className="text-ink">발표용 보기</span>
+            <span className="block text-[11px] leading-relaxed text-ink-muted">
+              배경지도·3D 건물을 끄고 좌표를 숨깁니다. 켠 뒤 여는 .inp 는 제목·주석·한글 이름(지명 등)을 지우고 엽니다 — 값은 그대로라 해석 결과는 같습니다.
+            </span>
+          </span>
+        </label>
         <div className="space-y-0.5">
           {BASEMAP_OPTIONS.map((option) => (
             <label

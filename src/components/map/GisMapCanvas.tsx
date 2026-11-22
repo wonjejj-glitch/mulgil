@@ -114,19 +114,26 @@ function CursorReadout({ zoom }: { zoom: number }) {
   const sewerLinks = useSewerStore((s) => s.project.conduits.length);
   const nodeCount = sewer ? sewerNodes : waterNodes;
   const linkCount = sewer ? sewerLinks : waterLinks;
+  const present = useUIStore((s) => s.presentMode);
   let tm = '';
-  if (cursor && cursor[0] > 122 && cursor[0] < 134 && cursor[1] > 31 && cursor[1] < 45) {
+  if (!present && cursor && cursor[0] > 122 && cursor[0] < 134 && cursor[1] > 31 && cursor[1] < 45) {
     const [x, y] = wgs84ToEpsg('EPSG:5186', cursor);
     tm = `X ${x.toFixed(1)}  Y ${y.toFixed(1)}`;
   }
   return (
     <div className="absolute inset-x-0 bottom-0 z-10 flex h-7 items-center gap-4 border-t border-line bg-panel/95 px-3 text-[11px] tabular-nums text-ink-soft">
-      <span>
-        <span className="text-ink-muted">경도</span> {cursor ? cursor[0].toFixed(6) : '—'}
-      </span>
-      <span>
-        <span className="text-ink-muted">위도</span> {cursor ? cursor[1].toFixed(6) : '—'}
-      </span>
+      {present ? (
+        <span className="text-ink-muted">발표용 보기 — 좌표·배경지도 숨김</span>
+      ) : (
+        <>
+          <span>
+            <span className="text-ink-muted">경도</span> {cursor ? cursor[0].toFixed(6) : '—'}
+          </span>
+          <span>
+            <span className="text-ink-muted">위도</span> {cursor ? cursor[1].toFixed(6) : '—'}
+          </span>
+        </>
+      )}
       {tm && (
         <span>
           <span className="text-ink-muted">EPSG:5186</span> {tm}
@@ -162,7 +169,8 @@ export function GisMapCanvas() {
   const resultsRevision = useSimulationStore((s) => s.resultsRevision);
   const stepIndex = useSimulationStore((s) => s.stepIndex);
   const tool = useUIStore((s) => s.tool);
-  const basemap = useUIStore((s) => s.basemap);
+  // 발표용 보기에서는 배경지도를 끈다 (위치가 드러나지 않게)
+  const basemap = useUIStore((s) => (s.presentMode ? 'none' : s.basemap));
   const vworldKey = useUIStore((s) => s.vworldKey);
   const layerVisibility = useUIStore((s) => s.layers);
   const nodeTheme = useUIStore((s) => s.nodeTheme);
@@ -217,7 +225,7 @@ export function GisMapCanvas() {
 
   const basemapDim = useUIStore((s) => s.basemapDim);
   const basemapGray = useUIStore((s) => s.basemapGray);
-  const buildings3d = useUIStore((s) => s.layers.buildings3d);
+  const buildings3d = useUIStore((s) => s.layers.buildings3d && !s.presentMode);
   // 3D 건물: 브이월드 키가 있으면 브이월드 건물(층수), 없거나 조회가 막히면 OpenStreetMap 건물
   const [buildingsFailedKey, setBuildingsFailedKey] = useState<string | null>(null);
   const vworldBuildings = buildings3d && vworldKey !== '' && buildingsFailedKey !== vworldKey;

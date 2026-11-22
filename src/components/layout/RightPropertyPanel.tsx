@@ -1,6 +1,7 @@
 import { ArrowLeftRight, LocateFixed, Trash } from 'lucide-react';
 import { useMemo } from 'react';
 import { deleteSelection } from '../../app/actions';
+import { PRESENT_TITLE } from '../../core/io/inpAnonymize';
 import { linkValueAt, nodeValueAt } from '../../core/engine/simulationManager';
 import { computeSupplyZones, nodeContributions } from '../../core/engine/supplyZones';
 import type { NetworkLink, NetworkNode, PipeStatus, SourceType, ValveType } from '../../core/model/types';
@@ -218,7 +219,8 @@ function NodeEditor({ node, labels }: { node: NetworkNode; labels: UnitLabels })
   });
   const patch = (value: Partial<NetworkNode>) => updateNode(node.id, value);
   const inKorea = node.position[0] > 122 && node.position[0] < 134 && node.position[1] > 31 && node.position[1] < 45;
-  const tm = inKorea ? wgs84ToEpsg('EPSG:5186', node.position) : null;
+  const present = useUIStore((s) => s.presentMode);
+  const tm = inKorea && !present ? wgs84ToEpsg('EPSG:5186', node.position) : null;
 
   return (
     <>
@@ -291,12 +293,20 @@ function NodeEditor({ node, labels }: { node: NetworkNode; labels: UnitLabels })
       </Section>
 
       <Section title="위치">
-        <FieldRow label="경도">
-          <ReadonlyValue>{node.position[0].toFixed(7)}</ReadonlyValue>
-        </FieldRow>
-        <FieldRow label="위도">
-          <ReadonlyValue>{node.position[1].toFixed(7)}</ReadonlyValue>
-        </FieldRow>
+        {present ? (
+          <FieldRow label="좌표">
+            <ReadonlyValue>발표용 보기에서 숨김</ReadonlyValue>
+          </FieldRow>
+        ) : (
+          <>
+            <FieldRow label="경도">
+              <ReadonlyValue>{node.position[0].toFixed(7)}</ReadonlyValue>
+            </FieldRow>
+            <FieldRow label="위도">
+              <ReadonlyValue>{node.position[1].toFixed(7)}</ReadonlyValue>
+            </FieldRow>
+          </>
+        )}
         {tm && (
           <FieldRow label="EPSG:5186">
             <ReadonlyValue>
@@ -477,6 +487,8 @@ function LinkEditor({ link, labels }: { link: NetworkLink; labels: UnitLabels })
 
 function ProjectSummary({ labels }: { labels: UnitLabels }) {
   const model = useNetworkStore((s) => s.model);
+  const present = useUIStore((s) => s.presentMode);
+  const title = present ? [PRESENT_TITLE] : model.title;
   const summary = useMemo(() => {
     let demand = 0;
     let junctions = 0;
@@ -498,8 +510,8 @@ function ProjectSummary({ labels }: { labels: UnitLabels }) {
   return (
     <>
       <Section title="프로젝트">
-        <p className="mb-2 break-words text-xs text-ink">{model.title[0] ?? '(제목 없음)'}</p>
-        {model.title.slice(1).map((line, index) => (
+        <p className="mb-2 break-words text-xs text-ink">{title[0] ?? '(제목 없음)'}</p>
+        {title.slice(1).map((line, index) => (
           <p key={index} className="break-words text-[11px] text-ink-muted">
             {line}
           </p>

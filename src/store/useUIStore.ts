@@ -85,6 +85,15 @@ interface PersistedUI {
 /** 저장 형식 판. 2 부터 기본 배경지도가 브이월드 (키가 들어 있는 배포판). */
 const PERSIST_VERSION = 2;
 
+function initialPresentMode(): boolean {
+  try {
+    const v = new URLSearchParams(globalThis.location?.search ?? '').get('present');
+    return v !== null && v !== '0';
+  } catch {
+    return false;
+  }
+}
+
 function loadPersisted(): PersistedUI {
   // 한국 지도는 브이월드가 자세하므로 키가 있으면 브이월드 일반지도를 기본으로 (개발 PC 처럼 키가 없으면 OpenStreetMap)
   const defaultBasemap: BasemapId = BUILT_IN_VWORLD_KEY ? 'vworld-base' : 'osm';
@@ -129,6 +138,12 @@ interface UIState {
   vworldKey: string;
   basemapDim: number;
   basemapGray: boolean;
+  /**
+   * 발표용 보기: 배경지도·3D 건물을 끄고 좌표 표시를 숨기며, 이때 여는 .inp 는 제목·주석·한글 이름을 지운다.
+   * 실관망을 비식별로 시연할 때 쓴다. 주소에 ?present=1 을 붙이면 처음부터 켜진다. 저장하지 않는다.
+   */
+  presentMode: boolean;
+  setPresentMode: (on: boolean) => void;
   layers: LayerVisibility;
   nodeTheme: NodeTheme;
   linkTheme: LinkTheme;
@@ -198,6 +213,8 @@ export const useUIStore = create<UIState>()((set, get) => ({
   vworldKey: persisted.vworldKey,
   basemapDim: persisted.basemapDim,
   basemapGray: persisted.basemapGray,
+  presentMode: initialPresentMode(),
+  setPresentMode: (presentMode) => set({ presentMode }),
   layers: {
     junctions: true,
     sources: true,
