@@ -142,7 +142,7 @@ export function LeftLayerPanel() {
           <span>
             <span className="text-ink">발표용 보기</span>
             <span className="block text-[11px] leading-relaxed text-ink-muted">
-              배경지도·3D 건물을 끄고 좌표를 숨깁니다. 켠 뒤 여는 .inp 는 제목·주석·한글 이름(지명 등)을 지우고 엽니다 — 값은 그대로라 해석 결과는 같습니다.
+              배경은 글씨 없는 위성지도만 보이고(‘배경 없음’을 고르면 꺼짐) 3D 건물·좌표를 숨깁니다. 켠 뒤 여는 .inp 는 제목·주석·한글 이름(지명 등)을 지우고 엽니다 — 값은 그대로라 해석 결과는 같습니다.
             </span>
           </span>
         </label>

@@ -83,6 +83,8 @@ export interface PressureFixResult {
   smallZones: number;
   /** 물이 들어오는 관을 찾지 못한 구역 (수원 바로 아래·고립 등) */
   noEntryZones: number;
+  /** 관로가 아니라 기존 펌프·밸브(또는 구역 안 배수지)로 물을 받는 구역 — 기존 설비 설정을 볼 곳 */
+  deviceFedZones: number;
 }
 
 interface Edge {
@@ -165,7 +167,7 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
 
   const high = new Set([...maxP].filter(([, v]) => v > o.maxPressure).map(([k]) => k));
   const low = new Set([...minP].filter(([, v]) => v < o.minPressure).map(([k]) => k));
-  const result: PressureFixResult = { candidates: [], highNodes: high.size, lowNodes: low.size, smallZones: 0, noEntryZones: 0 };
+  const result: PressureFixResult = { candidates: [], highNodes: high.size, lowNodes: low.size, smallZones: 0, noEntryZones: 0, deviceFedZones: 0 };
 
   const elevOf = (id: string) => model.nodes[id]?.elevation ?? 0;
   const headAt = (id: string, s: number) => {
@@ -173,7 +175,7 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
     return ix === undefined ? NaN : results.node.head[s * N + ix];
   };
 
-  const build = (kind: 'prv' | 'booster', zone: string[]): FixCandidate | null => {
+  const build = (kind: 'prv' | 'booster', zone: string[]): FixCandidate | 'noEntry' | 'deviceFed' => {
     const inZone = new Set(zone);
     const boundary: { pipeId: string; inside: string; outside: string; inflow: number[] }[] = [];
     for (const a of zone) {
@@ -182,11 +184,31 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
         boundary.push({ pipeId: e.pipeId, inside: a, outside: e.other, inflow: inflowSeries(e.pipeId, a) });
       }
     }
-    const tol = 1e-6;
-    const inflows = boundary
-      .map((b) => ({ ...b, total: b.inflow.reduce((s, q) => s + Math.max(0, q), 0), peak: Math.max(0, ...b.inflow) }))
-      .filter((b) => b.peak > tol);
-    if (inflows.length === 0) return null;
+    // 구역 안 수요 (첨두) — 유입량이 이보다 훨씬 크면 물이 구역을 지나 하류로 가는 주관로 구역이다
+    let zoneDemandPeak = 0;
+    for (let s = 0; s < steps; s++) {
+      let sum = 0;
+      for (const z of zone) {
+        const ix = results.nodeIndex.get(z);
+        if (ix !== undefined) sum += Math.max(0, results.node.demand[s * N + ix]);
+      }
+      zoneDemandPeak = Math.max(zoneDemandPeak, sum);
+    }
+    // 유입으로 볼 최소 유량: 구역 수요의 2% (해석 잔차 수준의 흐름을 유입관으로 잡지 않는다)
+    const tol = Math.max(1e-6, 0.02 * zoneDemandPeak);
+    const flows = boundary.map((b) => ({
+      ...b,
+      total: b.inflow.reduce((s, q) => s + Math.max(0, q), 0),
+      peak: Math.max(0, ...b.inflow),
+      /** 구역 밖으로 나가는 최대 유량 */
+      out: Math.max(0, ...b.inflow.map((q) => -q)),
+    }));
+    const inflows = flows.filter((b) => b.peak > tol);
+    if (inflows.length === 0) return 'noEntry';
+    // 관로로 들어오는 물이 구역 수요의 절반도 안 되면 기존 펌프·밸브(또는 구역 안 배수지)로 받는 구역이다 — 관로에 밸브를 더 둘 자리가 아니다
+    let pipeInPeak = 0;
+    for (let s = 0; s < steps; s++) pipeInPeak = Math.max(pipeInPeak, flows.reduce((sum, b) => sum + Math.max(0, b.inflow[s] ?? 0), 0));
+    if (pipeInPeak < 0.5 * zoneDemandPeak) return 'deviceFed';
     inflows.sort((a, b) => b.total - a.total);
     const entry = inflows[0];
     const elevs = zone.map(elevOf);
@@ -198,20 +220,16 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
     const position = model.nodes[entry.inside]?.position ?? [0, 0];
     const zoneMax = Math.max(...zone.map((z) => maxP.get(z) ?? -Infinity));
     const zoneMin = Math.min(...zone.map((z) => minP.get(z) ?? Infinity));
-    // 구역 안 수요 (첨두) — 유입량이 이보다 훨씬 크면 물이 구역을 지나 하류로 가는 주관로 구역이다
-    let zoneDemandPeak = 0;
-    for (let s = 0; s < steps; s++) {
-      let sum = 0;
-      for (const z of zone) {
-        const ix = results.nodeIndex.get(z);
-        if (ix !== undefined) sum += Math.max(0, results.node.demand[s * N + ix]);
-      }
-      zoneDemandPeak = Math.max(zoneDemandPeak, sum);
-    }
     // 수요가 없는 저수압 구역(끝단 빈 절점 등)은 가압할 물이 없다 — 펌프 곡선이 0 유량이 되어 해석이 풀리지 않는다
-    if (kind === 'booster' && zoneDemandPeak < 1e-3) return null;
+    if (kind === 'booster' && zoneDemandPeak < 1e-3) return 'noEntry';
     const throughFlow = entry.peak > 2 * zoneDemandPeak + 1e-3;
     let recommended = true;
+    // 밸브를 두거나 닫을 관이 시간에 따라 구역 밖으로도 물을 내보내면, 막았을 때 그쪽이 물을 못 받는다
+    const exits = [entry, ...inflows.slice(1)].filter((b) => b.out > Math.max(tol, 0.1 * zoneDemandPeak));
+    if (exits.length > 0) {
+      recommended = false;
+      notes.push(`관로 ${exits.map((b) => b.pipeId).join(', ')}는 시간에 따라 구역 밖으로도 물을 보냅니다 — 여기를 막으면(감압밸브·가압펌프는 한 방향, 경계 제수밸브는 닫힘) 그쪽 수압이 떨어질 수 있습니다. 그쪽 공급 경로를 먼저 확인하세요.`);
+    }
     if (throughFlow) {
       recommended = false;
       notes.push(`유입량(${entry.peak.toFixed(1)})이 구역 수요(${zoneDemandPeak.toFixed(1)})보다 훨씬 커서 물이 이 구역을 지나 하류로 갑니다 — 여기에 두면 하류 전체 수압이 함께 바뀝니다. 구역 끝 가지관이나 배수지 수위·관경을 먼저 검토하세요.`);
@@ -240,9 +258,9 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
       }
       let maxHeadIn = -Infinity;
       for (let s = 0; s < steps; s++) maxHeadIn = Math.max(maxHeadIn, headAt(entry.inside, s));
-      if (!(hSet < maxHeadIn - 0.5)) return null; // 감압해도 낮아지지 않는다
+      if (!(hSet < maxHeadIn - 0.5)) return 'noEntry'; // 감압해도 낮아지지 않는다
       const setting = (hSet - elevOf(entry.inside)) * pPerElev;
-      if (!(setting > 0)) return null;
+      if (!(setting > 0)) return 'noEntry';
       return {
         id: '',
         kind,
@@ -266,7 +284,7 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
     // 가압: 구역 최저 수압을 (최소 기준 + 여유)로
     const target = o.minPressure + o.boostMarginM * (us ? PSI_PER_METER : 1);
     const headNeeded = (target - zoneMin) / pPerElev; // 표고 단위
-    if (!(headNeeded > 0)) return null;
+    if (!(headNeeded > 0)) return 'noEntry';
     if (zoneMin < -50 * (us ? PSI_PER_METER : 1)) notes.push('수압이 크게 음수입니다 — 공급원과 제대로 이어지지 않았거나 표고 입력 오류일 수 있으니 가압 전에 연결·표고를 확인하세요.');
     const flowM3s = toM3s(designFlow, model.options.flowUnits);
     const headM = headNeeded / mToElev;
@@ -301,7 +319,11 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
         continue;
       }
       const c = build(kind, zone);
-      if (!c) {
+      if (c === 'deviceFed') {
+        result.deviceFedZones++;
+        continue;
+      }
+      if (c === 'noEntry') {
         result.noEntryZones++;
         continue;
       }
@@ -310,6 +332,50 @@ export function proposePressureFixes(model: NetworkModel, results: SimulationRes
     }
   }
   return result;
+}
+
+export interface ZoneOutcome {
+  id: string;
+  kind: 'prv' | 'booster';
+  /** 구역 절점 수 */
+  nodes: number;
+  /** 감압이면 구역 최고 수압, 가압이면 구역 최저 수압 (전 시간) */
+  before: number;
+  after: number;
+  /** 적용 뒤 구역 최저 수압 — 감압으로 높은 곳이 모자라지 않았는지 */
+  afterLow: number;
+  /** 적용 뒤 이 구역이 기준 안에 들어왔는지 */
+  ok: boolean;
+}
+
+function zoneRange(r: SimulationResults, ids: string[]): { hi: number; lo: number } {
+  const N = r.nodeIds.length;
+  let hi = -Infinity, lo = Infinity;
+  for (const id of ids) {
+    const ix = r.nodeIndex.get(id);
+    if (ix === undefined) continue;
+    for (let s = 0; s < r.stepCount; s++) {
+      const p = r.node.pressure[s * N + ix];
+      if (p > hi) hi = p;
+      if (p < lo) lo = p;
+    }
+  }
+  return { hi, lo };
+}
+
+/**
+ * 적용한 후보마다 그 구역의 수압이 실제로 기준 안에 들어왔는지 (다시 해석한 결과로) 확인한다.
+ * 감압: 구역 최고 수압이 최대 기준 이하이고, 최저 수압이 최소 기준(원래 그보다 낮았으면 원래 값) 아래로 내려가지 않았을 것.
+ * 가압: 구역 최저 수압이 최소 기준 이상일 것.
+ */
+export function zoneOutcomes(candidates: FixCandidate[], before: SimulationResults, after: SimulationResults, c: { minPressure: number; maxPressure: number }): ZoneOutcome[] {
+  const eps = 0.05;
+  return candidates.map((x) => {
+    const b = zoneRange(before, x.zoneNodeIds);
+    const a = zoneRange(after, x.zoneNodeIds);
+    const ok = x.kind === 'prv' ? a.hi <= c.maxPressure + eps && a.lo >= Math.min(c.minPressure, b.lo) - eps : a.lo >= c.minPressure - eps;
+    return { id: x.id, kind: x.kind, nodes: x.zoneNodeIds.length, before: x.kind === 'prv' ? b.hi : b.lo, after: x.kind === 'prv' ? a.hi : a.lo, afterLow: a.lo, ok };
+  });
 }
 
 const FLOW_TO_M3S: Record<string, number> = {

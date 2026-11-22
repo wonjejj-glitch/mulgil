@@ -4,7 +4,7 @@ import { parseInp } from '../io/inpParser';
 import { writeInp } from '../io/inpWriter';
 import { runHydraulics } from './epanetRunner';
 import { checkCriteria, defaultCriteria } from './criteria';
-import { applyPressureFixes, DEFAULT_PRESSURE_FIX, proposePressureFixes } from './pressureFix';
+import { applyPressureFixes, DEFAULT_PRESSURE_FIX, proposePressureFixes, zoneOutcomes } from './pressureFix';
 import { toSimulationResults, type SimulationResults } from './simulationManager';
 import type { NetworkModel } from '../model/types';
 
@@ -59,6 +59,14 @@ describe('감압·가압 후보 제안', () => {
     const res = await solve(after);
     const a = extremes(after, res);
     expect(a.overMax(maxPressure)).toBeLessThan(b.overMax(maxPressure));
+    // 구역별 확인: 구역은 전에는 기준을 넘었고, 추천 후보의 구역은 적용 뒤 기준 안
+    const outcomes = zoneOutcomes(prv, before, res, { minPressure: 10, maxPressure });
+    expect(outcomes).toHaveLength(prv.length);
+    for (const z of outcomes) expect(z.before).toBeGreaterThan(maxPressure);
+    for (const z of outcomes.filter((_, i) => prv[i].recommended)) {
+      expect(z.ok).toBe(true);
+      expect(z.after).toBeLessThanOrEqual(maxPressure + 0.05);
+    }
     // 원래 관로 연장은 그대로
     for (const c of prv) expect((after.links[c.entryPipeId] as { length: number }).length).toBeCloseTo((model.links[c.entryPipeId] as { length: number }).length, 6);
   });

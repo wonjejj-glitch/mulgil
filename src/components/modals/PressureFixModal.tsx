@@ -7,7 +7,7 @@ import { CircleCheck, Eye, LoaderCircle, Wand2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { runSimulation } from '../../app/actions';
 import { checkCriteria, defaultCriteria } from '../../core/engine/criteria';
-import { applyPressureFixes, DEFAULT_PRESSURE_FIX, proposePressureFixes, type FixCandidate } from '../../core/engine/pressureFix';
+import { applyPressureFixes, DEFAULT_PRESSURE_FIX, proposePressureFixes, zoneOutcomes, type FixCandidate, type ZoneOutcome } from '../../core/engine/pressureFix';
 import type { SimulationResults } from '../../core/engine/simulationManager';
 import { formatNumber, isUsUnits, unitLabels } from '../../core/model/units';
 import type { NetworkModel } from '../../core/model/types';
@@ -20,24 +20,52 @@ import { Modal } from '../ui/Modal';
 interface Counts {
   high: number;
   low: number;
-  maxP: number;
-  minP: number;
+  /** 기준을 벗어난 절점 ID */
+  highIds: string[];
+  lowIds: string[];
 }
 
 function countViolations(model: NetworkModel, r: SimulationResults, min: number, max: number, skip: Set<string>): Counts {
   const hits = checkCriteria(model, r, { minPressure: min, maxPressure: max, minVelocity: 0, maxVelocity: Infinity }).filter((h) => !skip.has(h.id));
-  const N = r.nodeIds.length;
-  let maxP = -Infinity, minP = Infinity;
-  for (let i = 0; i < N; i++) {
-    const id = r.nodeIds[i];
-    if (model.nodes[id]?.type !== 'junction' || skip.has(id)) continue;
-    for (let t = 0; t < r.stepCount; t++) {
-      const p = r.node.pressure[t * N + i];
-      if (p > maxP) maxP = p;
-      if (p < minP) minP = p;
-    }
+  const highIds = hits.filter((h) => h.kind === 'highPressure').map((h) => h.id);
+  const lowIds = hits.filter((h) => h.kind === 'lowPressure').map((h) => h.id);
+  return { high: highIds.length, low: lowIds.length, highIds, lowIds };
+}
+
+/** 남은 위반 절점이 어디에 있는지: 기존 펌프·밸브에 바로 붙은 절점 / 고르지 않은 후보 구역 / 그 밖(작은 구역 등) */
+interface Remainder {
+  device: number;
+  unchosen: number;
+  rest: number;
+}
+
+function remainderOf(model: NetworkModel, ids: string[], unchosenZone: Set<string>): Remainder {
+  const atDevice = new Set<string>();
+  for (const l of Object.values(model.links)) {
+    if (l.type === 'pipe') continue;
+    atDevice.add(l.startNodeId);
+    atDevice.add(l.endNodeId);
   }
-  return { high: hits.filter((h) => h.kind === 'highPressure').length, low: hits.filter((h) => h.kind === 'lowPressure').length, maxP, minP };
+  const out: Remainder = { device: 0, unchosen: 0, rest: 0 };
+  for (const id of ids) {
+    if (atDevice.has(id)) out.device++;
+    else if (unchosenZone.has(id)) out.unchosen++;
+    else out.rest++;
+  }
+  return out;
+}
+
+interface Compare {
+  before: Counts;
+  after?: Counts;
+  failed?: boolean;
+  prv: number;
+  booster: number;
+  closed: number;
+  skip: string[];
+  zones?: ZoneOutcome[];
+  remainHigh?: Remainder;
+  remainLow?: Remainder;
 }
 
 export function PressureFixModal() {
@@ -54,7 +82,7 @@ export function PressureFixModal() {
   const [minZone, setMinZone] = useState(DEFAULT_PRESSURE_FIX.minZoneNodes);
   /** 사용자가 고른 것/뺀 것 (없으면 추천 후보만 고른 상태) */
   const [picked, setPicked] = useState<Record<string, boolean>>({});
-  const [compare, setCompare] = useState<{ before: Counts; after?: Counts; failed?: boolean; prv: number; booster: number; closed: number; skip: string[] } | null>(null);
+  const [compare, setCompare] = useState<Compare | null>(null);
   const [busy, setBusy] = useState(false);
 
   const proposal = useMemo(
@@ -80,6 +108,8 @@ export function PressureFixModal() {
     if (!results || chosen.length === 0) return;
     setBusy(true);
     const before = countViolations(model, results, minP, maxP, new Set());
+    const applied = chosen;
+    const unchosenZone = new Set((proposal?.candidates ?? []).filter((c) => !isOn(c)).flatMap((c) => c.zoneNodeIds));
     let summary = { prv: 0, booster: 0, closed: 0, nodes: [] as string[] };
     useNetworkStore.getState().commit((d) => {
       summary = applyPressureFixes(d, chosen);
@@ -89,8 +119,19 @@ export function PressureFixModal() {
     const sim = useSimulationStore.getState();
     const after = sim.status === 'done' ? sim.results : null;
     if (after) {
-      const counts = countViolations(useNetworkStore.getState().model, after, minP, maxP, new Set(summary.nodes));
-      setCompare({ before, after: counts, prv: summary.prv, booster: summary.booster, closed: summary.closed, skip: summary.nodes });
+      const now = useNetworkStore.getState().model;
+      const counts = countViolations(now, after, minP, maxP, new Set(summary.nodes));
+      setCompare({
+        before,
+        after: counts,
+        prv: summary.prv,
+        booster: summary.booster,
+        closed: summary.closed,
+        skip: summary.nodes,
+        zones: zoneOutcomes(applied, results, after, { minPressure: minP, maxPressure: maxP }),
+        remainHigh: remainderOf(now, counts.highIds, unchosenZone),
+        remainLow: remainderOf(now, counts.lowIds, unchosenZone),
+      });
     } else {
       setCompare({ before, failed: true, prv: summary.prv, booster: summary.booster, closed: summary.closed, skip: summary.nodes });
     }
@@ -132,7 +173,7 @@ export function PressureFixModal() {
         {compare ? (
           <section>
             <h3 className="mb-1 flex items-center gap-1.5 font-semibold text-ink">
-              <CircleCheck size={14} className="text-good" /> 적용 결과 — 감압밸브 {compare.prv}개 · 가압펌프 {compare.booster}개 · 경계 제수밸브(닫음) {compare.closed}개
+              <CircleCheck size={14} className="text-good" /> 적용 결과 — 감압밸브 {compare.prv}개 · 가압펌프 {compare.booster}개{compare.closed > 0 ? ` · 경계 제수밸브(닫음) ${compare.closed}개` : ''}
             </h3>
             {compare.failed ? (
               <p className="rounded border border-red-500/40 bg-red-500/10 p-2 text-red-300">
@@ -144,33 +185,11 @@ export function PressureFixModal() {
                 다시 해석하는 중…
               </p>
             ) : (
-              <table className="w-full max-w-xl tabular-nums">
-                <thead className="text-ink-soft">
-                  <tr>
-                    <th className="px-2 py-1 text-left font-medium">항목</th>
-                    <th className="px-2 py-1 text-right font-medium">적용 전</th>
-                    <th className="px-2 py-1 text-right font-medium">적용 후</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[
-                    ['최대 수압 초과 절점', compare.before.high.toLocaleString(), compare.after.high.toLocaleString()],
-                    ['최소 수압 미달 절점', compare.before.low.toLocaleString(), compare.after.low.toLocaleString()],
-                    ['최고 수압', p(compare.before.maxP), p(compare.after.maxP)],
-                    ['최저 수압', p(compare.before.minP), p(compare.after.minP)],
-                  ].map(([k, a, b]) => (
-                    <tr key={k} className="border-t border-line/60">
-                      <td className="px-2 py-1 text-ink">{k}</td>
-                      <td className="px-2 py-1 text-right">{a}</td>
-                      <td className="px-2 py-1 text-right font-semibold text-ink">{b}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ResultTables compare={compare} after={compare.after} p={p} />
             )}
             <p className="mt-2 text-[11px] leading-relaxed text-ink-muted">
-              넣은 밸브·펌프는 이름이 PRV_·BP_ 로 시작합니다(밸브 자리 절점은 위 수 세기에서 뺐습니다). 닫은 경계관 때문에 물을 받던 다른 곳의 수압이 내려가지 않았는지 지도와 설계기준 검토 탭에서 확인하세요.
-              남은 위반 구역이 있으면 ‘다시 후보 보기’로 한 번 더 제안을 받을 수 있습니다.
+              넣은 밸브·펌프는 이름이 PRV_·BP_ 로 시작합니다(밸브 자리 절점은 위 수 세기에서 뺐습니다). 관망 전체의 최고·최저 수압은 대개 펌프 토출·흡입 쪽 절점 값이라 여기서는 손댄 구역의 값을 보입니다 — 전체
+              목록은 설계기준 검토 탭에 있습니다. 남은 구역은 ‘다시 후보 보기’로 한 번 더 제안을 받거나, 기존 펌프·밸브 설정과 구역 나누기를 검토하세요.
             </p>
           </section>
         ) : (
@@ -197,6 +216,7 @@ export function PressureFixModal() {
                   최대 수압 초과 {proposal.highNodes.toLocaleString()} · 최소 수압 미달 {proposal.lowNodes.toLocaleString()} 절점
                   {proposal.smallZones > 0 && ` · 작은 구역 ${proposal.smallZones}개는 개별 확인`}
                   {proposal.noEntryZones > 0 && ` · 유입관을 못 찾은 구역 ${proposal.noEntryZones}개`}
+                  {proposal.deviceFedZones > 0 && ` · 기존 펌프·밸브로 받는 구역 ${proposal.deviceFedZones}개(기존 설비 설정 검토)`}
                 </span>
               )}
             </section>
@@ -279,5 +299,92 @@ export function PressureFixModal() {
         )}
       </div>
     </Modal>
+  );
+}
+
+function remainText(label: string, total: number, r: Remainder | undefined): string | null {
+  if (!r || total === 0) return null;
+  const parts = [
+    r.unchosen > 0 ? `고르지 않은 후보 구역 ${r.unchosen.toLocaleString()}곳` : '',
+    r.device > 0 ? `기존 펌프·밸브에 바로 붙은 절점 ${r.device.toLocaleString()}곳` : '',
+    r.rest > 0 ? `그 밖(작은 구역·기존 설비 아래 등) ${r.rest.toLocaleString()}곳` : '',
+  ].filter(Boolean);
+  return `남은 ${label} ${total.toLocaleString()}곳 — ${parts.join(' · ')}`;
+}
+
+/** 적용 전·후 비교: 관망 전체 위반 수 + 손댄 구역별 수압 (다시 해석한 값) */
+function ResultTables({ compare, after, p }: { compare: Compare; after: Counts; p: (v: number) => string }) {
+  const zones = compare.zones ?? [];
+  const prv = zones.filter((z) => z.kind === 'prv');
+  const bp = zones.filter((z) => z.kind === 'booster');
+  const okCount = zones.filter((z) => z.ok).length;
+  const rows: [string, string, string][] = [
+    ['최대 수압 초과 절점', compare.before.high.toLocaleString(), after.high.toLocaleString()],
+    ['최소 수압 미달 절점', compare.before.low.toLocaleString(), after.low.toLocaleString()],
+  ];
+  if (prv.length > 0) rows.push([`감압 구역 최고 수압 (${prv.length}구역)`, p(Math.max(...prv.map((z) => z.before))), p(Math.max(...prv.map((z) => z.after)))]);
+  if (bp.length > 0) rows.push([`가압 구역 최저 수압 (${bp.length}구역)`, p(Math.min(...bp.map((z) => z.before))), p(Math.min(...bp.map((z) => z.after)))]);
+  const remain = [remainText('최대 수압 초과', after.high, compare.remainHigh), remainText('최소 수압 미달', after.low, compare.remainLow)].filter((x): x is string => x !== null);
+  return (
+    <div className="space-y-2">
+      {zones.length > 0 && (
+        <p className={okCount === zones.length ? 'font-semibold text-good' : 'font-semibold text-amber-300'}>
+          {okCount === zones.length ? `손댄 구역 ${zones.length}곳 모두 기준 안으로 들어왔습니다.` : `손댄 구역 ${zones.length}곳 중 ${okCount}곳이 기준 안 — ${zones.length - okCount}곳은 확인이 필요합니다.`}
+        </p>
+      )}
+      <div className="flex flex-wrap items-start gap-4">
+        <table className="w-[22rem] tabular-nums">
+          <thead className="text-ink-soft">
+            <tr>
+              <th className="px-2 py-1 text-left font-medium">항목</th>
+              <th className="px-2 py-1 text-right font-medium">적용 전</th>
+              <th className="px-2 py-1 text-right font-medium">적용 후</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(([k, a, b]) => (
+              <tr key={k} className="border-t border-line/60">
+                <td className="px-2 py-1 text-ink">{k}</td>
+                <td className="px-2 py-1 text-right">{a}</td>
+                <td className="px-2 py-1 text-right font-semibold text-ink">{b}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {zones.length > 0 && (
+          <div className="max-h-[38vh] min-w-[22rem] flex-1 overflow-auto rounded border border-line">
+            <table className="w-full tabular-nums">
+              <thead className="sticky top-0 bg-panel text-left text-[11px] text-ink-muted">
+                <tr>
+                  <th className="px-2 py-1">구역별 결과</th>
+                  <th className="px-2 py-1 text-right">절점</th>
+                  <th className="px-2 py-1 text-right">적용 전</th>
+                  <th className="px-2 py-1 text-right">적용 후</th>
+                  <th className="px-2 py-1">판정</th>
+                </tr>
+              </thead>
+              <tbody>
+                {zones.map((z) => (
+                  <tr key={z.id} className="border-t border-line/60">
+                    <td className="px-2 py-1 text-ink">
+                      {z.id} <span className="text-ink-muted">{z.kind === 'prv' ? '최고' : '최저'}</span>
+                    </td>
+                    <td className="px-2 py-1 text-right">{z.nodes}</td>
+                    <td className="px-2 py-1 text-right">{p(z.before)}</td>
+                    <td className="px-2 py-1 text-right font-semibold text-ink">{p(z.after)}</td>
+                    <td className={z.ok ? 'px-2 py-1 text-good' : 'px-2 py-1 text-amber-300'}>{z.ok ? '기준 안' : '확인 필요'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {remain.map((t) => (
+        <p key={t} className="text-[11px] text-ink-soft">
+          {t}
+        </p>
+      ))}
+    </div>
   );
 }

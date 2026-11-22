@@ -10,6 +10,15 @@ export const BASEMAP_OPTIONS: { id: BasemapId; label: string; needsKey?: boolean
   { id: 'none', label: '배경 없음' },
 ];
 
+/**
+ * 발표용 보기에서 쓸 배경: 글씨(지명·도로명)가 없는 위성지도만 보인다.
+ * '배경 없음'을 골랐으면 끄고, 그 밖의 지도(일반·위성+주기)는 위성지도로 바꾼다.
+ */
+export function presentBasemap(chosen: BasemapId, hasVworldKey: boolean): BasemapId {
+  if (chosen === 'none' || chosen === 'satellite') return chosen;
+  return hasVworldKey ? 'vworld-satellite' : 'satellite';
+}
+
 const BACKGROUND = '#0f1318';
 
 /** 3D 건물용 벡터 타일 (OpenFreeMap — 키 없이 쓰는 OpenStreetMap 기반 공개 타일, OpenMapTiles 스키마). */

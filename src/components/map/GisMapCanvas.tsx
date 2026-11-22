@@ -26,7 +26,7 @@ import { useSimulationStore } from '../../store/useSimulationStore';
 import { SEWER_TOOLS, useUIStore, type Selection, type Tool } from '../../store/useUIStore';
 import { midpointOfPath, wgs84ToEpsg } from '../../utils/geoMath';
 import { useDraftStore } from '../../store/useDraftStore';
-import { BUILDINGS_MIN_ZOOM, buildMapStyle } from './basemaps';
+import { BUILDINGS_MIN_ZOOM, buildMapStyle, presentBasemap } from './basemaps';
 import { DraftMapTool } from './DraftMapTool';
 import { VworldBuildings } from './VworldBuildings';
 import { buildDraftLayers } from './draftLayers';
@@ -123,7 +123,7 @@ function CursorReadout({ zoom }: { zoom: number }) {
   return (
     <div className="absolute inset-x-0 bottom-0 z-10 flex h-7 items-center gap-4 border-t border-line bg-panel/95 px-3 text-[11px] tabular-nums text-ink-soft">
       {present ? (
-        <span className="text-ink-muted">발표용 보기 — 좌표·배경지도 숨김</span>
+        <span className="text-ink-muted">발표용 보기 — 좌표·지명 숨김</span>
       ) : (
         <>
           <span>
@@ -169,9 +169,9 @@ export function GisMapCanvas() {
   const resultsRevision = useSimulationStore((s) => s.resultsRevision);
   const stepIndex = useSimulationStore((s) => s.stepIndex);
   const tool = useUIStore((s) => s.tool);
-  // 발표용 보기에서는 배경지도를 끈다 (위치가 드러나지 않게)
-  const basemap = useUIStore((s) => (s.presentMode ? 'none' : s.basemap));
+  // 발표용 보기에서는 글씨(지명·도로명)가 없는 위성지도만 보인다
   const vworldKey = useUIStore((s) => s.vworldKey);
+  const basemap = useUIStore((s) => (s.presentMode ? presentBasemap(s.basemap, Boolean(s.vworldKey)) : s.basemap));
   const layerVisibility = useUIStore((s) => s.layers);
   const nodeTheme = useUIStore((s) => s.nodeTheme);
   const linkTheme = useUIStore((s) => s.linkTheme);
@@ -810,7 +810,10 @@ export function GisMapCanvas() {
     if (!map || !mapReady) return;
     // 3D 건물은 줌 14 부터 보이므로, 멀리서 켜면 보이는 줌까지 함께 당긴다.
     const zoom = buildings3d && map.getZoom() < BUILDINGS_MIN_ZOOM + 1.5 ? { zoom: BUILDINGS_MIN_ZOOM + 2 } : {};
-    map.easeTo({ pitch: columns3d || buildings3d ? 55 : 0, duration: 700, ...zoom });
+    const pitch = columns3d || buildings3d ? 55 : 0;
+    // 바꿀 것이 없으면 움직이지 않는다 — 지도가 준비되기 전에 연 관망으로 가는 이동(fitBounds)을 끊지 않게
+    if (Math.abs(map.getPitch() - pitch) < 0.5 && zoom.zoom === undefined) return;
+    map.easeTo({ pitch, duration: 700, ...zoom });
   }, [columns3d, buildings3d, mapReady]);
 
   /* ---------------------------------------------------------------- 툴팁 */
