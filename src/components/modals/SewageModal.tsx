@@ -6,7 +6,7 @@ import { DATA_GO_KR_KEY, registerHouseholdsAlong } from '../../app/buildingRegis
 import { BUILDING_SOURCE_LABEL, fetchMapBuildings } from '../../app/mapBuildings';
 import { estimateBuildings } from '../../core/model/buildingEstimate';
 import { isGeoreferenced, lngLatToXy, nodePositions } from '../../core/sewer/mapFrame';
-import { assignSewage, DEFAULT_SEWAGE, sewageCsv, sourcesFromConnections, type SewageOptions } from '../../core/sewer/sewage';
+import { analysisFlow, assignSewage, DEFAULT_SEWAGE, sewageCsv, sourcesFromConnections, type SewageOptions } from '../../core/sewer/sewage';
 import { useSewerGisStore } from '../../store/useSewerGisStore';
 import { useSewerStore } from '../../store/useSewerStore';
 import { useUIStore } from '../../store/useUIStore';
@@ -129,7 +129,7 @@ export function SewageModal() {
     useUIStore.getState().pushToast({
       level: s.unassigned > 0 ? 'warning' : 'success',
       title: `오수 유입량 반영 — 맨홀 ${result.perNode.length.toLocaleString()}곳 · 일평균 ${Math.round(s.totalM3day).toLocaleString()} m³/일`,
-      message: `연결관으로 ${s.viaConnection.toLocaleString()} · 가까운 관거로 ${s.viaNearest.toLocaleString()}${s.unassigned ? ` · ${o.maxDistance} m 안에 관거가 없어 뺀 ${s.unassigned}곳` : ''}. 첨두 배율 ×${o.peakFactor} 적용. ‘현황 해석’을 실행하세요. Ctrl+Z 로 되돌릴 수 있습니다.`,
+      message: `연결관으로 ${s.viaConnection.toLocaleString()} · 가까운 관거로 ${s.viaNearest.toLocaleString()}${s.unassigned ? ` · ${o.maxDistance} m 안에 관거가 없어 뺀 ${s.unassigned}곳` : ''}. 첨두 배율 ×${o.peakFactor}${o.infiltration > 0 ? ` + 지하수량 ${Math.round(o.infiltration * 100)}%` : ''} 적용. ‘현황 해석’을 실행하세요. Ctrl+Z 로 되돌릴 수 있습니다.`,
     });
     close();
   };
@@ -143,7 +143,7 @@ export function SewageModal() {
       footer={
         <>
           {result && (
-            <Button className="mr-auto" onClick={() => downloadText(`${project.name.replace(/[/\\:*?"<>|\s]+/g, '_').slice(0, 40)}_맨홀별_오수량.csv`, sewageCsv(result, o.peakFactor), 'text/csv;charset=utf-8')}>
+            <Button className="mr-auto" onClick={() => downloadText(`${project.name.replace(/[/\\:*?"<>|\s]+/g, '_').slice(0, 40)}_맨홀별_오수량.csv`, sewageCsv(result, o), 'text/csv;charset=utf-8')}>
               <Download size={12} /> 맨홀별 CSV
             </Button>
           )}
@@ -228,22 +228,23 @@ export function SewageModal() {
                 ['conversion', '오수전환율 (사용량 × )', 0.05],
                 ['defaultHouseholds', '자료 없을 때 세대수', 1],
                 ['peakFactor', '첨두 배율 (해석 유량 = 일평균 ×)', 0.1],
+                ['infiltration', '지하수량 비율 (일평균 × , 배율 없이 더함)', 0.05],
                 ['maxDistance', '관거 찾는 거리 (m)', 10],
               ] as const
             ).map(([key, label, step]) => (
               <label key={key}>
                 <span className="text-[11px] text-ink-muted">{label}</span>
-                <NumberField value={o[key]} min={0} step={step} onCommit={(v) => set({ [key]: Math.max(key === 'conversion' ? 0 : 0.01, key === 'conversion' ? Math.min(1, v) : v) })} />
+                <NumberField value={o[key]} min={0} step={step} onCommit={(v) => set({ [key]: Math.max(key === 'conversion' || key === 'infiltration' ? 0 : 0.01, key === 'conversion' ? Math.min(1, v) : v) })} />
               </label>
             ))}
           </div>
-          <p className="mt-1 text-[11px] text-ink-muted">기본값은 예시입니다. 사업의 하수도정비기본계획 원단위(1인 1일 오수량, 일최대·시간최대 계수)로 바꾸세요. 첨두 배율 1 이면 일평균 오수량을 넣습니다.</p>
+          <p className="mt-1 text-[11px] text-ink-muted">기본값은 예시입니다. 사업의 하수도정비기본계획 원단위(1인 1일 오수량, 일최대·시간최대 계수)로 바꾸세요. 첨두 배율 1 이면 일평균 오수량을 넣습니다. 지하수량(침입수)은 하수도시설기준상 1인1일최대오수량의 10~20% 로, 시간 변동이 없어 첨두 배율 없이 더합니다(0 이면 넣지 않음).</p>
         </section>
 
         {result && (
           <section>
             <h3 className="mb-1 font-semibold text-ink">
-              결과 — 맨홀 {result.perNode.length.toLocaleString()}곳 · 일평균 {total.toLocaleString(undefined, { maximumFractionDigits: 1 })} m³/일 · 해석 유량 합 {((total * o.peakFactor) / 86.4).toFixed(2)} L/s
+              결과 — 맨홀 {result.perNode.length.toLocaleString()}곳 · 일평균 {total.toLocaleString(undefined, { maximumFractionDigits: 1 })} m³/일 · 해석 유량 합 {(analysisFlow(total, o) * 1000).toFixed(2)} L/s{o.infiltration > 0 ? ` (지하수량 ${(total * o.infiltration).toFixed(1)} m³/일 포함)` : ''}
             </h3>
             <p className="text-[11px] text-ink-muted">
               수용가·건물 {result.stats.sources.toLocaleString()} · 연결관으로 {result.stats.viaConnection.toLocaleString()} · 가까운 관거로 {result.stats.viaNearest.toLocaleString()}

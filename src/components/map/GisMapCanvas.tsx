@@ -40,11 +40,11 @@ import { useSwmmStore } from '../../store/useSwmmStore';
 import { SwmmLegend } from '../swmm/SwmmPanels';
 import { buildSwmmLayers } from '../swmm/swmmLayers';
 import { useSwmmThematic } from '../swmm/swmmThematic';
-import { addSewerCatchment, addSewerConduit, addSewerNode, conduitProblem, moveSewerNode } from '../../core/sewer/edit';
+import { addSewerCatchment, addSewerConduit, addSewerNode, addSewerPump, conduitProblem, moveSewerNode, pumpProblem } from '../../core/sewer/edit';
 import type { SewerNode } from '../../core/sewer/types';
 import { useSewerStore } from '../../store/useSewerStore';
 import { toCss } from '../../utils/colorScales';
-import { buildSewerLayers, SEWER_CATCHMENT_LAYER, SEWER_COLORS, SEWER_CONDUIT_LAYER, SEWER_NODE_LAYER, sewerMapData, type SewerCatchmentDatum, type SewerConduitDatum, type SewerMapData, type SewerNodeDatum } from './sewerLayers';
+import { buildSewerLayers, SEWER_CATCHMENT_LAYER, SEWER_COLORS, SEWER_CONDUIT_LAYER, SEWER_NODE_LAYER, SEWER_PUMP_LAYER, sewerMapData, type SewerCatchmentDatum, type SewerConduitDatum, type SewerMapData, type SewerNodeDatum, type SewerPumpDatum } from './sewerLayers';
 
 const NODE_TOOLS: ReadonlySet<Tool> = new Set(['junction', 'reservoir', 'tank']);
 const LINK_TOOLS: ReadonlySet<Tool> = new Set(['pipe', 'pump', 'valve']);
@@ -62,10 +62,11 @@ const TOOL_HINTS: Record<Tool, string> = {
   manhole: '지도를 클릭해 맨홀을 추가합니다. 지반고는 가까운 절점 값(없으면 0), 관저고는 지반고 − 1.8 m 로 임시로 둡니다.',
   outfall: '지도를 클릭해 방류구(하류 끝)를 추가합니다.',
   conduit: '상류 맨홀 → 하류 맨홀(또는 방류구) 순서로 클릭합니다. 빈 곳을 클릭하면 그 자리에 맨홀을 만듭니다 · 이어 그리기 · Esc/우클릭 종료',
+  pumpStation: '중계펌프장: 습정이 될 맨홀(낮은 쪽) → 토출 맨홀(높은 쪽) 순서로 클릭합니다. 두 맨홀 사이 관거는 펌프로 바뀝니다 · Esc/우클릭 종료',
   catchment: '유역 경계 꼭짓점을 차례로 찍고 더블클릭(또는 첫 점 클릭)으로 닫습니다. 면적은 자동 계산, 출구는 경계 안 가장 낮은 맨홀(없으면 가장 가까운 맨홀) · 우클릭 취소',
 };
 
-const EMPTY_SEWER_DATA: SewerMapData = { nodes: [], conduits: [], catchments: [] };
+const EMPTY_SEWER_DATA: SewerMapData = { nodes: [], conduits: [], pumps: [], catchments: [] };
 
 /** 하수 모드 범례: 관거 = 설계 판정, 맨홀 = SWMM 해석 결과. */
 function SewerLegend() {
@@ -607,6 +608,35 @@ export function GisMapCanvas() {
           ui.setAreaDraft([...draft, lngLat]);
           return;
         }
+        if (activeTool === 'pumpStation') {
+          if (!node) {
+            ui.pushToast({ level: 'info', title: '맨홀을 클릭하세요', message: '펌프장은 습정 맨홀 → 토출 맨홀 순서로 기존 맨홀을 고릅니다.' });
+            return;
+          }
+          const start = ui.sewerDrawStart;
+          if (!start) {
+            if (node.kind === 'OUTFALL') {
+              ui.pushToast({ level: 'info', title: '습정 맨홀부터 클릭하세요', message: '방류구는 습정이 될 수 없습니다.' });
+              return;
+            }
+            ui.setSewerDrawStart(node.id);
+            sewer.select({ kind: 'node', id: node.id });
+            return;
+          }
+          const problem = pumpProblem(sewer.project, start, node.id);
+          if (problem) {
+            ui.pushToast({ level: 'warning', title: '펌프장을 둘 수 없습니다', message: problem });
+            return;
+          }
+          let pumpId: string | null = null;
+          sewer.edit((d) => void (pumpId = addSewerPump(d, start, node.id)));
+          ui.setSewerDrawStart(null);
+          if (pumpId) {
+            sewer.select({ kind: 'pump', id: pumpId });
+            ui.pushToast({ level: 'success', title: `중계펌프장 ${pumpId} (${start} → ${node.id})`, message: '용량·양정·습정 면적은 자동(유입 설계유량·실양정 + 2 m)입니다. 오른쪽 패널에서 바꿀 수 있습니다. Ctrl+Z 로 되돌림.' });
+          }
+          return;
+        }
         if (activeTool === 'conduit') {
           const start = ui.sewerDrawStart;
           if (!start) {
@@ -641,6 +671,8 @@ export function GisMapCanvas() {
         }
         // 선택 도구
         if (node) return sewer.select({ kind: 'node', id: node.id });
+        const pumpHit = pick(event.point, [SEWER_PUMP_LAYER], 6)?.object as SewerPumpDatum | undefined;
+        if (pumpHit) return sewer.select({ kind: 'pump', id: pumpHit.pump.id });
         const conduit = pickSewerConduit(event.point);
         if (conduit) return sewer.select({ kind: 'conduit', id: conduit.id });
         const catchment = pick(event.point, [SEWER_CATCHMENT_LAYER], 1)?.object as SewerCatchmentDatum | undefined;
@@ -849,6 +881,11 @@ export function GisMapCanvas() {
         lines.push(`관거 ${conduit.id} (${conduit.upstream} → ${conduit.downstream})`);
         lines.push(`Ø${formatNumber((row?.diameter ?? conduit.diameter) * 1000, 0)} mm · ${formatNumber(conduit.length, 1)} m`);
         if (row) lines.push(`유속 ${row.velocity.toFixed(2)} m/s · d/D ${row.depth_ratio.toFixed(2)} · ${row.status}`);
+      } else if (info.layer.id === SEWER_PUMP_LAYER) {
+        const { pump } = info.object as SewerPumpDatum;
+        lines.push(`중계펌프장 ${pump.id} (${pump.wet_well} → ${pump.discharge})`);
+        const r = useSewerStore.getState().simulation?.pump_summary?.[pump.id];
+        if (r) lines.push(`가동률 ${r.utilized.toFixed(1)} % · 최대 ${(r.max_flow * 1000).toFixed(1)} L/s`);
       } else if (info.layer.id.startsWith('sewer-')) {
         return null;
       } else if (info.layer.id.startsWith('swmm-')) {

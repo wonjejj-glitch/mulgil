@@ -2,7 +2,7 @@
  * 하수 모드(지도 편집) 동작: 영역 전환, 지도 맞춤, 삭제, 설계·해석 실행, SWMM 가져오기, 지반고 보정.
  * 편집 연산 자체는 core/sewer/edit.ts(순수 함수), 설계·해석은 app/sewerActions.ts 를 쓴다.
  */
-import { applyGroundLevels, deleteSewerCatchment, deleteSewerConduit, deleteSewerNode, emptySewerProject } from '../core/sewer/edit';
+import { applyGroundLevels, deleteSewerCatchment, deleteSewerConduit, deleteSewerNode, deleteSewerPump, emptySewerProject } from '../core/sewer/edit';
 import { sewerProjectFromSwmm } from '../core/sewer/fromSwmmInp';
 import { isGeoreferenced, nodePositions, sewerFrame, xyToLngLat } from '../core/sewer/mapFrame';
 import type { LngLat } from '../core/model/types';
@@ -60,7 +60,12 @@ export function deleteSewerSelection(): void {
   const store = useSewerStore.getState();
   const selection = store.selection;
   if (!selection) return;
-  store.edit((d) => void (selection.kind === 'node' ? deleteSewerNode(d, selection.id) : selection.kind === 'catchment' ? deleteSewerCatchment(d, selection.id) : deleteSewerConduit(d, selection.id)));
+  store.edit((d) => {
+    if (selection.kind === 'node') deleteSewerNode(d, selection.id);
+    else if (selection.kind === 'catchment') deleteSewerCatchment(d, selection.id);
+    else if (selection.kind === 'pump') deleteSewerPump(d, selection.id);
+    else deleteSewerConduit(d, selection.id);
+  });
   store.select(null);
 }
 

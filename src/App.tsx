@@ -83,6 +83,7 @@ const SEWER_TOOL_KEYS: Record<string, Tool> = {
   KeyO: 'outfall',
   KeyC: 'conduit',
   KeyA: 'catchment',
+  KeyP: 'pumpStation',
 };
 
 function isTypingTarget(target: EventTarget | null): boolean {

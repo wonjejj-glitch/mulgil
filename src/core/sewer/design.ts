@@ -47,6 +47,9 @@ export class SewerDesignError extends Error {
 
 const fixed2 = (x: number) => x.toFixed(2);
 
+/** 습정 바닥을 유입관 관저보다 (가동 수심 + 이 값) 낮춘다 (m) */
+export const WET_WELL_FREEBOARD = 0.3;
+
 /**
  * 'compat'   : SewerStudio 와 같은 동작 (정답 벡터 기준). 조건을 만족하는 후보가 없으면 가장 큰 관경.
  * 'practical': 같은 탐색을 먼저 하고, 후보가 없을 때 최소 유속 조건만 빼고 다시 찾는다.
@@ -137,9 +140,13 @@ export function designSewer(
       if (g.nodes.get(v)!.kind !== 'OUTFALL') crowns.set(v, Math.min(crowns.get(v)!, bound));
     }
   }
+  // 펌프장 습정: 바닥을 유입관 관저보다 (가동 수심 + 여유) 만큼 낮춘다 — 펌프가 켜지기 전에 유입관으로 역류하지 않게.
+  // 습정은 구조물이라 굴착깊이 제약에서 뺀다.
+  const sump = new Map<string, number>();
+  for (const pu of g.pumps.values()) sump.set(pu.wet_well, pu.on_depth + WET_WELL_FREEBOARD);
   for (const n of p.nodes) {
-    if (n.kind !== 'OUTFALL') n.invert = crowns.get(n.id)! - maxD.get(n.id)!;
-    if (n.ground - n.invert > cst.max_depth + 1e-7) issues.push(`${n.id}: 굴착깊이 ${fixed2(n.ground - n.invert)} m > ${fixed2(cst.max_depth)} m`);
+    if (n.kind !== 'OUTFALL') n.invert = crowns.get(n.id)! - maxD.get(n.id)! - (sump.get(n.id) ?? 0);
+    if (!sump.has(n.id) && n.ground - n.invert > cst.max_depth + 1e-7) issues.push(`${n.id}: 굴착깊이 ${fixed2(n.ground - n.invert)} m > ${fixed2(cst.max_depth)} m`);
   }
 
   // C. 실제 기하 재검토
@@ -150,7 +157,7 @@ export function designSewer(
     const u = nodeOf.get(c.upstream)!;
     const v = nodeOf.get(c.downstream)!;
     c.inlet_offset = maxD.get(u.id)! - c.diameter;
-    c.outlet_offset = maxD.get(v.id)! - c.diameter;
+    c.outlet_offset = maxD.get(v.id)! - c.diameter + (sump.get(v.id) ?? 0);
     let slope = (crowns.get(u.id)! - crowns.get(v.id)!) / c.length;
     // 실무 모드: 얕은 지선이 깊은 간선 맨홀로 들어가며 경사가 최대 경사를 넘으면, 관은 목표 경사로 두고
     // 남는 높이를 하류 맨홀 안 낙차(부관, 유출 옵셋)로 처리한다.
@@ -179,7 +186,9 @@ export function designSewer(
     const lowNote = slow && mode === 'practical';
     if (vel > cst.max_velocity + 1e-7 || (slow && !lowNote)) problems.push(lowNote ? '최대유속 초과' : '유속 범위');
     if (lowNote) notes.push(`${c.id}: 유속 ${vel.toFixed(2)} m/s — 최소 ${cst.min_velocity} m/s 미달`);
-    if (Math.max(u.ground - u.invert, v.ground - v.invert) > cst.max_depth + 1e-7) problems.push('굴착깊이');
+    // 습정으로 들어가는 관은 관 끝 깊이로 본다 (습정 바닥은 구조물)
+    const downDepth = v.ground - (v.invert + (sump.get(v.id) ?? 0));
+    if (Math.max(u.ground - u.invert, downDepth) > cst.max_depth + 1e-7) problems.push('굴착깊이');
     if (rules.maxDrop !== undefined && drop > rules.maxDrop + 1e-7) problems.push(`단차 ${rules.maxDrop} m 초과`);
     if (problems.length > 0) issues.push(`${c.id}: ${problems.join(', ')} 제약 위반`);
     rows.push({

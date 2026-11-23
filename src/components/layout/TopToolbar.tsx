@@ -98,6 +98,7 @@ const SEWER_TOOL_LIST: typeof TOOLS = [
   { tool: 'outfall', label: '방류구', shortcut: 'O', icon: ArrowDownToLine },
   { tool: 'conduit', label: '관거', shortcut: 'C', icon: TrendingDown },
   { tool: 'catchment', label: '유역', shortcut: 'A', icon: Hexagon },
+  { tool: 'pumpStation', label: '펌프장', shortcut: 'P', icon: Fan },
 ];
 
 const DOMAINS: { id: Domain; label: string; icon: LucideIcon; title: string }[] = [

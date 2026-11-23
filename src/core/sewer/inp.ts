@@ -2,8 +2,9 @@
  * SewerStudio 호환 SWMM INP 생성 (SPEC §6). 바이트 단위로 원본과 같은 출력을 목표로 한다.
  * 단위는 CMS·m. 시작 날짜는 2026-01-01 00:00:00 으로 고정(원본의 예제값).
  */
+import { pumpCurve, pumpDuties } from './pumps';
 import { buildNetwork } from './topology';
-import type { SewerProject } from './types';
+import type { SewerProject, SewerPump } from './types';
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -31,7 +32,9 @@ const f10 = (x: number) => x.toFixed(10);
 const f6 = (x: number) => x.toFixed(6);
 
 export function generateInp(p: SewerProject): string {
-  buildNetwork(p); // 위상 오류는 그대로 전달한다
+  const graph = buildNetwork(p); // 위상 오류는 그대로 전달한다
+  const pumps = p.pumps ?? [];
+  const wells = new Set(pumps.map((x) => x.wet_well));
   const o = p.options;
   const end = stamp(o.duration_minutes);
   const endTime = `${end.time}:00`;
@@ -64,7 +67,7 @@ export function generateInp(p: SewerProject): string {
     'HEAD_TOLERANCE 0.0015',
   );
   add('[EVAPORATION]', 'CONSTANT 0');
-  add('[JUNCTIONS]', ...p.nodes.filter((n) => n.kind === 'JUNCTION').map((n) => `${n.id} ${f8(n.invert)} ${f8(n.ground - n.invert)} 0 0 0`));
+  add('[JUNCTIONS]', ...p.nodes.filter((n) => n.kind === 'JUNCTION' && !wells.has(n.id)).map((n) => `${n.id} ${f8(n.invert)} ${f8(n.ground - n.invert)} 0 0 0`));
   add(
     '[OUTFALLS]',
     ...p.nodes
@@ -73,6 +76,26 @@ export function generateInp(p: SewerProject): string {
   );
   add('[CONDUITS]', ...p.conduits.map((c) => `${c.id} ${c.upstream} ${c.downstream} ${f8(c.length)} ${f8(c.roughness)} ${f8(c.inlet_offset)} ${f8(c.outlet_offset)} 0 0`));
   add('[XSECTIONS]', ...p.conduits.map((c) => `${c.id} CIRCULAR ${f8(c.diameter)} 0 0 0 1`));
+  if (pumps.length > 0) {
+    // 중계펌프장: 습정 = 바닥 면적이 일정한 저류조, 펌프 = 양정-유량 곡선(TYPE3), 가동·정지 수심으로 켜고 끈다
+    const duty = new Map(pumpDuties(p, graph).map((d) => [d.id, d]));
+    const node = new Map(p.nodes.map((n) => [n.id, n]));
+    add(
+      '[STORAGE]',
+      ...pumps.map((x: SewerPump) => {
+        const w = node.get(x.wet_well)!;
+        return `${w.id} ${f8(w.invert)} ${f8(w.ground - w.invert)} 0 FUNCTIONAL 0 0 ${f8(duty.get(x.id)!.area)} 0 0`;
+      }),
+    );
+    add('[PUMPS]', ...pumps.map((x) => `${x.id} ${x.wet_well} ${x.discharge} ${x.id}_CURVE ON ${f8(x.on_depth)} ${f8(x.off_depth)}`));
+    add(
+      '[CURVES]',
+      ...pumps.flatMap((x) => {
+        const d = duty.get(x.id)!;
+        return pumpCurve(d.capacity, d.head).map(([h, q], i) => `${x.id}_CURVE ${i === 0 ? 'Pump3 ' : ''}${f8(h)} ${f8(q)}`);
+      }),
+    );
+  }
   add('[DWF]', ...p.nodes.filter((n) => n.base_flow !== 0).map((n) => `${n.id} FLOW ${f10(n.base_flow)}`));
 
   if (p.catchments.length > 0) {
@@ -117,6 +140,8 @@ export interface SewerInpMeta {
   runoff: Record<string, number>;
   /** 방류구 ID → 지반고 (inp 에는 방류구 깊이가 없다) */
   outfall_ground: Record<string, number>;
+  /** 중계펌프장 (자동 값 null 그대로) */
+  pumps?: SewerPump[];
 }
 
 export function inpMeta(p: SewerProject): SewerInpMeta {
@@ -127,6 +152,7 @@ export function inpMeta(p: SewerProject): SewerInpMeta {
     constraints: p.constraints,
     runoff: Object.fromEntries(p.catchments.map((s) => [s.id, s.runoff_coefficient])),
     outfall_ground: Object.fromEntries(p.nodes.filter((n) => n.kind === 'OUTFALL').map((n) => [n.id, n.ground])),
+    ...(p.pumps && p.pumps.length > 0 ? { pumps: p.pumps } : {}),
   };
 }
 
@@ -151,7 +177,15 @@ export function readInpMeta(text: string): SewerInpMeta | null {
   try {
     const meta = JSON.parse(chunks.join('')) as Partial<SewerInpMeta>;
     if (meta.v !== 1 || typeof meta.options !== 'object' || typeof meta.constraints !== 'object' || !meta.options || !meta.constraints) return null;
-    return { v: 1, name: typeof meta.name === 'string' ? meta.name : '', options: meta.options, constraints: meta.constraints, runoff: meta.runoff ?? {}, outfall_ground: meta.outfall_ground ?? {} };
+    return {
+      v: 1,
+      name: typeof meta.name === 'string' ? meta.name : '',
+      options: meta.options,
+      constraints: meta.constraints,
+      runoff: meta.runoff ?? {},
+      outfall_ground: meta.outfall_ground ?? {},
+      ...(Array.isArray(meta.pumps) && meta.pumps.length > 0 ? { pumps: meta.pumps } : {}),
+    };
   } catch {
     return null;
   }

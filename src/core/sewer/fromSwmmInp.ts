@@ -14,7 +14,7 @@ import { wgs84ToEpsg } from '../../utils/geoMath';
 import { readSwmmInp } from '../swmm/inpReader';
 import { readInpMeta } from './inp';
 import { SEWER_CRS } from './mapFrame';
-import { defaultConstraints, defaultOptions, type SewerBoundary, type SewerCatchment, type SewerConduit, type SewerNode, type SewerProject } from './types';
+import { defaultConstraints, defaultOptions, type SewerBoundary, type SewerCatchment, type SewerConduit, type SewerNode, type SewerProject, type SewerPump } from './types';
 import { parseSewerProject, SewerValidationError } from './validate';
 
 export interface SwmmImport {
@@ -172,7 +172,30 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
   const nonCircular: string[] = [];
   const skippedLinks: string[] = [];
   const badConduits: string[] = [];
+  const pumpRows = new Map(rows('PUMPS').map((t) => [t[0], t]));
+  const pumps: SewerPump[] = [];
   for (const link of swmm.links) {
+    if (link.kind === 'pump') {
+      // 습정 → 토출. 곡선은 옮기지 않고 용량·양정·습정 면적은 자동, 가동·정지 수심은 파일 값
+      const wet = nodeIds.get(link.from);
+      const dis = nodeIds.get(link.to);
+      const t = pumpRows.get(link.id);
+      const on = num(t?.[5]) * len;
+      const off = num(t?.[6]) * len;
+      if (wet && dis && !pumps.some((x) => x.wet_well === wet)) {
+        pumps.push({
+          id: conduitIds.add(link.id),
+          wet_well: wet,
+          discharge: dis,
+          capacity: null,
+          head: null,
+          on_depth: on > 0 ? r3(on) : 1.5,
+          off_depth: on > 0 && off >= 0 && off < on ? r3(off) : on > 0 ? r3(on / 3) : 0.5,
+          area: null,
+        });
+        continue;
+      }
+    }
     if (link.kind !== 'conduit') {
       skippedLinks.push(`${link.id}(${link.kind})`);
       continue;
@@ -205,7 +228,8 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
     });
   }
   if (nonCircular.length > 0) warnings.push(`원형이 아닌 단면 ${nonCircular.length}개는 높이(Geom1)를 관경으로 하는 원형관으로 바꿨습니다: ${list(nonCircular)}`);
-  if (skippedLinks.length > 0) warnings.push(`펌프·오리피스·위어·배출구 ${skippedLinks.length}개는 옮기지 않았습니다(중력식 원형관만 지원): ${list(skippedLinks)}`);
+  if (skippedLinks.length > 0) warnings.push(`오리피스·위어·배출구(또는 습정이 겹친 펌프) ${skippedLinks.length}개는 옮기지 않았습니다(원형관·중계펌프만 지원): ${list(skippedLinks)}`);
+  if (pumps.length > 0) warnings.push(`펌프 ${pumps.length}개를 중계펌프장으로 옮겼습니다. 펌프 곡선은 옮기지 않고 용량·양정·습정 면적을 자동(유입 유량·실양정 기준)으로 두었습니다 — 펌프장을 눌러 실제 값으로 고치세요.`);
   if (badConduits.length > 0) warnings.push(`연장·관경이 0 이거나 단면 정보가 없는 관거 ${badConduits.length}개는 옮기지 않았습니다: ${list(badConduits)}`);
 
   /* ---------------------------------------------------------------- 유역 */
@@ -271,7 +295,8 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
 
   const outDegree = new Map<string, number>();
   for (const c of conduits) outDegree.set(c.upstream, (outDegree.get(c.upstream) ?? 0) + 1);
-  const branching = nodes.filter((n) => n.kind === 'JUNCTION' && (outDegree.get(n.id) ?? 0) !== 1).map((n) => n.id);
+  const wetWells = new Set(pumps.map((x) => x.wet_well));
+  const branching = nodes.filter((n) => n.kind === 'JUNCTION' && (outDegree.get(n.id) ?? 0) !== (wetWells.has(n.id) ? 0 : 1)).map((n) => n.id);
   if (branching.length > 0) warnings.push(`하류 관거가 1개가 아닌 맨홀 ${branching.length}개: ${list(branching)}. 자동 설계는 가지형(맨홀마다 하류 관거 1개)만 됩니다 — 지도에서 고치세요.`);
   if (!nodes.some((n) => n.kind === 'OUTFALL')) warnings.push('방류구가 없습니다. 방류구 도구로 하류 끝에 추가하세요.');
 
@@ -281,6 +306,7 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
     nodes,
     conduits,
     catchments,
+    ...(pumps.length > 0 ? { pumps } : {}),
     options,
     constraints: defaultConstraints(),
   };
@@ -291,6 +317,8 @@ export function sewerProjectFromSwmm(text: string, name?: string): SwmmImport {
       name: meta.name.slice(0, 60) || project.name,
       options: { ...options, ...meta.options },
       constraints: { ...defaultConstraints(), ...meta.constraints },
+      // 물길에서 내보낸 펌프장 설정(자동 값 포함)을 그대로 되살린다
+      ...(meta.pumps ? { pumps: meta.pumps } : {}),
     };
     try {
       parseSewerProject(JSON.parse(JSON.stringify(restored)));

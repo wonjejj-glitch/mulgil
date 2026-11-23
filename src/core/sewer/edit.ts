@@ -82,14 +82,68 @@ export function conduitProblem(project: SewerProject, upstream: string, downstre
     return '두 절점 사이에 이미 관거가 있습니다.';
   }
   if (project.conduits.some((c) => c.upstream === upstream)) return `${upstream} 에는 이미 하류 관거가 있습니다 (맨홀의 하류 관거는 1개).`;
+  if ((project.pumps ?? []).some((p) => p.wet_well === upstream)) return `${upstream} 은(는) 펌프장 습정이라 펌프로만 빠집니다.`;
   // 하류에서 계속 내려가 상류 절점으로 돌아오면 순환
-  const next = new Map(project.conduits.map((c) => [c.upstream, c.downstream]));
+  const next = downstreamMap(project);
   let at: string | undefined = downstream;
   for (let i = 0; at !== undefined && i <= project.conduits.length; i++) {
     if (at === upstream) return '순환 관망이 됩니다. 흐름 방향(상류 → 하류)을 확인하세요.';
     at = next.get(at);
   }
   return null;
+}
+
+/** 절점 → 바로 하류 절점 (관거 또는 펌프) */
+function downstreamMap(project: SewerProject): Map<string, string> {
+  const next = new Map(project.conduits.map((c) => [c.upstream, c.downstream]));
+  for (const p of project.pumps ?? []) next.set(p.wet_well, p.discharge);
+  return next;
+}
+
+/**
+ * 중계펌프장을 둘 수 없는 이유 (둘 수 있으면 null).
+ * 습정 맨홀에 이미 하류 관거가 있으면, 그 관거가 토출 맨홀로 가는 경우에만 펌프로 바꾼다.
+ */
+export function pumpProblem(project: SewerProject, wetWell: string, discharge: string): string | null {
+  const w = project.nodes.find((n) => n.id === wetWell);
+  const d = project.nodes.find((n) => n.id === discharge);
+  if (!w || !d) return '절점을 찾을 수 없습니다.';
+  if (wetWell === discharge) return '같은 맨홀에는 둘 수 없습니다.';
+  if (w.kind === 'OUTFALL') return '방류구는 습정이 될 수 없습니다. 펌프장 습정이 될 맨홀을 먼저 누르세요.';
+  if ((project.pumps ?? []).some((p) => p.wet_well === wetWell)) return `${wetWell} 에는 이미 펌프장이 있습니다.`;
+  const out = project.conduits.find((c) => c.upstream === wetWell);
+  if (out && out.downstream !== discharge) return `${wetWell} 의 하류 관거 ${out.id}(→ ${out.downstream})를 먼저 지우세요. 습정은 펌프로만 빠집니다.`;
+  const next = downstreamMap(project);
+  if (out) next.delete(wetWell);
+  let at: string | undefined = discharge;
+  for (let i = 0; at !== undefined && i <= project.nodes.length; i++) {
+    if (at === wetWell) return '순환 관망이 됩니다. 토출 맨홀이 습정의 하류 쪽인지 확인하세요.';
+    at = next.get(at);
+  }
+  return null;
+}
+
+/** 중계펌프장을 넣는다 (용량·양정·습정 면적 자동, 가동 1.5 m · 정지 0.5 m). 같은 구간 관거는 펌프로 바꾼다. */
+export function addSewerPump(project: SewerProject, wetWell: string, discharge: string): string | null {
+  if (pumpProblem(project, wetWell, discharge)) return null;
+  project.conduits = project.conduits.filter((c) => !(c.upstream === wetWell && c.downstream === discharge));
+  const taken = [...project.conduits.map((c) => c.id), ...(project.pumps ?? []).map((p) => p.id)];
+  const id = nextSewerId('PS', taken, 2);
+  const w = project.nodes.find((n) => n.id === wetWell)!;
+  const depth = w.ground - w.invert;
+  const on = Math.min(1.5, Math.max(0.3, Math.round(depth * 0.6 * 10) / 10));
+  const off = Math.round(Math.min(0.5, on / 3) * 10) / 10;
+  project.pumps = [...(project.pumps ?? []), { id, wet_well: wetWell, discharge, capacity: null, head: null, on_depth: on, off_depth: off, area: null }];
+  return id;
+}
+
+export function deleteSewerPump(project: SewerProject, id: string): boolean {
+  const before = project.pumps?.length ?? 0;
+  const rest = (project.pumps ?? []).filter((p) => p.id !== id);
+  if (rest.length === before) return false;
+  if (rest.length > 0) project.pumps = rest;
+  else delete project.pumps;
+  return true;
 }
 
 /** 상류 → 하류 관거를 추가한다. 연장은 평면 거리(m). 이을 수 없으면 null. */
@@ -136,6 +190,7 @@ export function deleteSewerNode(project: SewerProject, id: string): boolean {
   if (index < 0) return false;
   project.nodes.splice(index, 1);
   project.conduits = project.conduits.filter((c) => c.upstream !== id && c.downstream !== id);
+  for (const p of project.pumps ?? []) if (p.wet_well === id || p.discharge === id) deleteSewerPump(project, p.id);
   reassignCatchments(project, id);
   return true;
 }
@@ -287,13 +342,29 @@ export function renameSewerNode(project: SewerProject, id: string, next: string)
     if (c.downstream === id) c.downstream = next;
   }
   for (const s of project.catchments) if (s.outlet === id) s.outlet = next;
+  for (const p of project.pumps ?? []) {
+    if (p.wet_well === id) p.wet_well = next;
+    if (p.discharge === id) p.discharge = next;
+  }
   return true;
+}
+
+/** 관거·펌프는 같은 ID 공간을 쓴다 */
+function linkIds(project: SewerProject): string[] {
+  return [...project.conduits.map((c) => c.id), ...(project.pumps ?? []).map((p) => p.id)];
 }
 
 export function renameSewerConduit(project: SewerProject, id: string, next: string): boolean {
   const conduit = project.conduits.find((c) => c.id === id);
-  if (!conduit || idProblem(project.conduits.map((c) => c.id), id, next)) return false;
+  if (!conduit || idProblem(linkIds(project), id, next)) return false;
   conduit.id = next;
+  return true;
+}
+
+export function renameSewerPump(project: SewerProject, id: string, next: string): boolean {
+  const pump = project.pumps?.find((p) => p.id === id);
+  if (!pump || idProblem(linkIds(project), id, next)) return false;
+  pump.id = next;
   return true;
 }
 
@@ -304,6 +375,7 @@ export function setSewerNodeKind(project: SewerProject, id: string, kind: SewerN
   node.kind = kind;
   if (kind === 'OUTFALL') {
     node.base_flow = 0;
+    for (const p of project.pumps ?? []) if (p.wet_well === id) deleteSewerPump(project, p.id);
     reassignCatchments(project, id);
   } else {
     node.boundary = 'FREE';

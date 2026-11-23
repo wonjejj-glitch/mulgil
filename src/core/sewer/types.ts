@@ -36,6 +36,29 @@ export interface SewerConduit {
   outlet_offset: number;
 }
 
+/**
+ * 중계펌프장: 습정(펌프장 수조) 맨홀에 모인 하수를 펌프로 토출 맨홀까지 올린다.
+ * 습정 맨홀은 하류 관거가 없고 이 펌프로만 빠진다. SWMM 에서는 습정 = STORAGE, 펌프 = 양정-유량 곡선(TYPE3) 펌프.
+ * 압송관 마찰손실은 따로 그리지 않고 전양정에 넣는다.
+ */
+export interface SewerPump {
+  id: string;
+  /** 습정 맨홀 ID */
+  wet_well: string;
+  /** 토출 맨홀 ID (압송관 끝) */
+  discharge: string;
+  /** 펌프 용량 (m³/s). null = 자동: 습정으로 들어오는 설계 유량 */
+  capacity: number | null;
+  /** 전양정 (m). null = 자동: 실양정(토출 맨홀 관저 − 습정 바닥) + 손실 여유 */
+  head: number | null;
+  /** 가동 수심 (습정 바닥 기준, m) */
+  on_depth: number;
+  /** 정지 수심 (m) */
+  off_depth: number;
+  /** 습정 바닥 면적 (m²). null = 자동: 용량 × 10분 ÷ (가동 − 정지 수심) */
+  area: number | null;
+}
+
 export interface SewerCatchment {
   id: string;
   outlet: string;
@@ -96,6 +119,8 @@ export interface SewerProject {
   nodes: SewerNode[];
   conduits: SewerConduit[];
   catchments: SewerCatchment[];
+  /** 중계펌프장 (없으면 자연유하 관망) */
+  pumps?: SewerPump[];
   options: SewerOptions;
   constraints: SewerConstraints;
 }

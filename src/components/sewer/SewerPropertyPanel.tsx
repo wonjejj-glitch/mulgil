@@ -11,6 +11,7 @@ import { REVIEW_KINDS, reviewSewer, type Verdict } from '../../core/sewer/review
 import { buildNetwork } from '../../core/sewer/topology';
 import type { SewerBoundary, SewerCatchment, SewerConduit, SewerNode, SewerNodeKind } from '../../core/sewer/types';
 import { parseSewerProject, SewerValidationError } from '../../core/sewer/validate';
+import { PumpSection } from './PumpSection';
 import { useSewerStore } from '../../store/useSewerStore';
 import { useUIStore } from '../../store/useUIStore';
 import { Button, FieldRow, NumberField, ReadonlyValue, Section, SelectField, TextField } from '../ui/fields';
@@ -338,6 +339,7 @@ export function SewerPropertyPanel() {
   const node = selection?.kind === 'node' ? project.nodes.find((n) => n.id === selection.id) : undefined;
   const conduit = selection?.kind === 'conduit' ? project.conduits.find((c) => c.id === selection.id) : undefined;
   const catchment = selection?.kind === 'catchment' ? project.catchments.find((c) => c.id === selection.id) : undefined;
+  const pump = selection?.kind === 'pump' ? project.pumps?.find((p) => p.id === selection.id) : undefined;
 
   return (
     <aside className="flex w-72 shrink-0 flex-col overflow-y-auto border-l border-line bg-panel">
@@ -416,9 +418,10 @@ export function SewerPropertyPanel() {
       {node && <NodeSection key={node.id} node={node} />}
       {conduit && <ConduitSection key={conduit.id} conduit={conduit} />}
       {catchment && <CatchmentSection key={catchment.id} catchment={catchment} />}
-      {!node && !conduit && !catchment && (
+      {pump && <PumpSection key={pump.id} pump={pump} />}
+      {!node && !conduit && !catchment && !pump && (
         <div className="px-3 py-3 text-[11px] leading-relaxed text-ink-muted">
-          지도에서 맨홀·관거·유역을 클릭하면 속성을 편집할 수 있습니다. 맨홀(M)·방류구(O)를 찍고 관거(C)는 상류 → 하류 순서로 잇습니다. 유역(A)은 경계를 그리면 면적과 출구 맨홀이 정해집니다. 맨홀을 끌면 옮겨지고 Delete 로 지웁니다.
+          지도에서 맨홀·관거·유역을 클릭하면 속성을 편집할 수 있습니다. 맨홀(M)·방류구(O)를 찍고 관거(C)는 상류 → 하류 순서로 잇습니다. 유역(A)은 경계를 그리면 면적과 출구 맨홀이 정해집니다. 자연유하가 안 되는 곳은 펌프장(P)으로 습정 → 토출 맨홀을 잇습니다. 맨홀을 끌면 옮겨지고 Delete 로 지웁니다.
         </div>
       )}
     </aside>

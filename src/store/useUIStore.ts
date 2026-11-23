@@ -6,11 +6,11 @@ import type { BBox, ImportCrsChoice } from '../utils/geoMath';
 /** 배포 때 넣은 공용 브이월드 키 (화면에는 보이지 않게 한다 — LeftLayerPanel). */
 export const BUILT_IN_VWORLD_KEY: string = (import.meta.env.VITE_VWORLD_KEY as string | undefined) ?? '';
 
-export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve' | 'manhole' | 'outfall' | 'conduit' | 'catchment';
+export type Tool = 'select' | 'area' | 'profile' | 'junction' | 'reservoir' | 'tank' | 'pipe' | 'pump' | 'valve' | 'manhole' | 'outfall' | 'conduit' | 'catchment' | 'pumpStation';
 /** 작업 영역: 상수(EPANET 관망) / 하수(useSewerStore 의 하수 프로젝트). */
 export type Domain = 'water' | 'sewer';
-export const SEWER_TOOLS: ReadonlySet<Tool> = new Set(['manhole', 'outfall', 'conduit', 'catchment']);
-export type SewerBottomTab = 'profile' | 'review' | 'simulation' | 'flood' | 'quantity' | 'audit';
+export const SEWER_TOOLS: ReadonlySet<Tool> = new Set(['manhole', 'outfall', 'conduit', 'catchment', 'pumpStation']);
+export type SewerBottomTab = 'profile' | 'review' | 'simulation' | 'peak' | 'flood' | 'quantity' | 'audit';
 export type Selection = { kind: 'node' | 'link'; id: string } | null;
 
 /** 다중 선택(구역 선택·Ctrl+클릭). 단일 선택(selection)과 별개로 관리한다. */

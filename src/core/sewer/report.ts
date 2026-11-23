@@ -16,9 +16,23 @@ export interface ReportLink {
   max_velocity: number;
   max_depth_ratio: number;
 }
+/** SWMM 'Pumping Summary' 한 줄 */
+export interface ReportPump {
+  /** 가동 시간 비율 (%) */
+  utilized: number;
+  startups: number;
+  avg_flow: number;
+  max_flow: number;
+  /** 펌프 곡선 범위를 벗어난 시간 (%, 낮은 쪽·높은 쪽) */
+  off_curve_low: number;
+  off_curve_high: number;
+}
+
 export interface ParsedReport {
   nodes: Record<string, ReportNode>;
   links: Record<string, ReportLink>;
+  /** 펌프가 있을 때만 */
+  pumps?: Record<string, ReportPump>;
   continuity: Record<string, number>;
   warnings: string[];
 }
@@ -35,6 +49,8 @@ const SECTION = /^([A-Za-z][A-Za-z /-]*? (?:Summary|Continuity))(?=\s|$)/;
 export function parseReport(text: string, project: SewerProject): ParsedReport {
   const nodeIds = new Set(project.nodes.map((n) => n.id));
   const linkIds = new Set(project.conduits.map((c) => c.id));
+  const pumpIds = new Set((project.pumps ?? []).map((x) => x.id));
+  const pumps: Record<string, ReportPump> = {};
   const nodes: Record<string, ReportNode> = {};
   const links: Record<string, ReportLink> = {};
   const continuity: Record<string, number> = {};
@@ -56,6 +72,15 @@ export function parseReport(text: string, project: SewerProject): ParsedReport {
     } else if (section === 'Node Flooding Summary' && nodeIds.has(parts[0]) && parts.length >= 7) {
       // 체적 열은 10^6 litre = 1000 m³
       nodes[parts[0]] = { ...nodes[parts[0]], flood_hours: Number(parts[1]), max_flood: Number(parts[2]), flood_volume_m3: Number(parts[5]) * 1000 };
+    } else if (section === 'Pumping Summary' && pumpIds.has(parts[0]) && parts.length >= 10) {
+      pumps[parts[0]] = {
+        utilized: Number(parts[1]),
+        startups: Number(parts[2]),
+        avg_flow: Number(parts[4]),
+        max_flow: Number(parts[5]),
+        off_curve_low: Number(parts[parts.length - 2]),
+        off_curve_high: Number(parts[parts.length - 1]),
+      };
     } else if (section === 'Link Flow Summary' && linkIds.has(parts[0]) && parts.length >= 8) {
       // '>50.00' 같은 하한 표기는 50 으로 축소된다 (원본과 같은 동작, QUESTIONS 11)
       links[parts[0]] = { max_flow: Number(parts[2]), max_velocity: Number(parts[5].replace(/>/g, '')), max_depth_ratio: Number(parts[7]) };
@@ -64,7 +89,7 @@ export function parseReport(text: string, project: SewerProject): ParsedReport {
   const sameKeys = (a: Record<string, unknown>, b: Set<string>) => Object.keys(a).length === b.size && Object.keys(a).every((k) => b.has(k));
   if (!sameKeys(nodes, nodeIds) || !sameKeys(links, linkIds)) throw new SewerReportError('SWMM 요약표에서 일부 객체 결과를 찾을 수 없습니다.');
   if (!('Flow Routing Continuity' in continuity)) throw new SewerReportError('SWMM 유량 연속성 오차를 찾을 수 없습니다.');
-  return { nodes, links, continuity, warnings };
+  return { nodes, links, continuity, warnings, ...(pumpIds.size > 0 ? { pumps } : {}) };
 }
 
 export interface NodeSummary {
@@ -82,6 +107,8 @@ export interface SimulationSummary {
   warnings: string[];
   node_summary: Record<string, NodeSummary>;
   link_summary: Record<string, ReportLink>;
+  /** 펌프장 결과 (펌프가 있을 때만) */
+  pump_summary?: Record<string, ReportPump>;
   quality_ok: boolean;
 }
 
@@ -117,5 +144,12 @@ export function summarizeSimulation(project: SewerProject, report: ParsedReport)
   }
   const tolerance = project.constraints.continuity_tolerance;
   const quality_ok = Object.values(report.continuity).every((v) => Math.abs(v) <= tolerance) && report.warnings.length === 0;
-  return { continuity: report.continuity, warnings: report.warnings, node_summary, link_summary: report.links, quality_ok };
+  return {
+    continuity: report.continuity,
+    warnings: report.warnings,
+    node_summary,
+    link_summary: report.links,
+    ...(report.pumps ? { pump_summary: report.pumps } : {}),
+    quality_ok,
+  };
 }

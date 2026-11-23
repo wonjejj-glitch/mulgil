@@ -5,7 +5,8 @@
  *   - 상수 사용량이 있으면: 사용량 × 오수전환율
  *   - 세대수가 있으면:     세대수 × 세대당 인원 × 1인 1일 오수량
  *   - 둘 다 없으면:        기본 세대수(건물·연결관 하나당)로 계산
- * 해석에 넣는 유량 = 일평균 × 첨두 배율 (시간최대 등, 사용자가 정함).
+ * 해석에 넣는 유량 = 일평균 × 첨두 배율 (시간최대 등, 사용자가 정함) + 지하수량(침입수, 일평균 × 지하수 비율).
+ *   지하수량은 시간에 따라 거의 변하지 않으므로 첨두 배율을 곱하지 않고 더한다 (하수도시설기준: 1인1일최대오수량의 10~20%).
  *
  * 어느 맨홀로 보낼지
  *   1) 하수연결관이 있으면 수용가에서 가까운 연결관 끝(집 쪽)을 찾고, 반대쪽 끝(본관 쪽)이 닿는 맨홀 또는 관거로 보낸다.
@@ -31,8 +32,10 @@ export interface SewageOptions {
   litersPerCapita: number;
   /** 오수전환율 (0~1) */
   conversion: number;
-  /** 첨두 배율: 해석 유량 = 일평균 × 이 값 */
+  /** 첨두 배율: 해석 유량 = 일평균 × 이 값 (+ 지하수량) */
   peakFactor: number;
+  /** 지하수량(침입수) 비율: 일평균 오수량 × 이 값을 첨두 배율 없이 더한다 (0 = 넣지 않음) */
+  infiltration: number;
   /** 세대수·사용량이 없는 수용가·건물·연결관 하나당 세대수 */
   defaultHouseholds: number;
   /** 가장 가까운 관거를 찾을 최대 거리 (m) */
@@ -46,6 +49,7 @@ export const DEFAULT_SEWAGE: SewageOptions = {
   litersPerCapita: 300,
   conversion: 0.9,
   peakFactor: 1,
+  infiltration: 0.15,
   defaultHouseholds: 1,
   maxDistance: 100,
   connectionSnap: 20,
@@ -210,7 +214,7 @@ export function assignSewage(project: SewerProject, sources: SewageSource[], con
     stats.totalM3day += m3day;
   }
   const flows = new Map<string, number>();
-  for (const r of per.values()) flows.set(r.id, (r.m3day * o.peakFactor) / 86400);
+  for (const r of per.values()) flows.set(r.id, analysisFlow(r.m3day, o));
   return { flows, perNode: [...per.values()].sort((a, b) => b.m3day - a.m3day), stats, unassignedIds };
 }
 
@@ -237,10 +241,15 @@ export function sourcesFromConnections(project: SewerProject, connections: XY[][
   return out;
 }
 
+/** 해석 유량 (m³/s) = 일평균 × 첨두 배율 + 일평균 × 지하수 비율 */
+export function analysisFlow(m3day: number, o: Pick<SewageOptions, 'peakFactor' | 'infiltration'>): number {
+  return (m3day * (o.peakFactor + (o.infiltration ?? 0))) / 86400;
+}
+
 /** 맨홀별 배분 결과 CSV (엑셀용 BOM 포함). */
-export function sewageCsv(result: SewageResult, peakFactor: number): string {
-  const lines = ['맨홀,수용가·건물 수,세대수,일평균 오수량(m³/일),해석 유량(L/s)'];
-  for (const r of result.perNode) lines.push([r.id, r.sources, round(r.households, 10), round(r.m3day, 1000), round(((r.m3day * peakFactor) / 86400) * 1000, 1000)].join(','));
+export function sewageCsv(result: SewageResult, o: Pick<SewageOptions, 'peakFactor' | 'infiltration'>): string {
+  const lines = ['맨홀,수용가·건물 수,세대수,일평균 오수량(m³/일),지하수량(m³/일),해석 유량(L/s)'];
+  for (const r of result.perNode) lines.push([r.id, r.sources, round(r.households, 10), round(r.m3day, 1000), round(r.m3day * (o.infiltration ?? 0), 1000), round(analysisFlow(r.m3day, o) * 1000, 1000)].join(','));
   return String.fromCharCode(0xfeff) + lines.join('\n') + '\n';
 }
 

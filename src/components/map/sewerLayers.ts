@@ -5,7 +5,7 @@ import type { DesignResult } from '../../core/sewer/design';
 import { nodePositions, sewerFrame, xyToLngLat } from '../../core/sewer/mapFrame';
 import { ringCentroid } from '../../core/sewer/edit';
 import type { SimulationSummary } from '../../core/sewer/report';
-import type { SewerCatchment, SewerConduit, SewerNode, SewerProject } from '../../core/sewer/types';
+import type { SewerCatchment, SewerConduit, SewerNode, SewerProject, SewerPump } from '../../core/sewer/types';
 import type { LngLat } from '../../core/model/types';
 import type { SewerSelection } from '../../store/useSewerStore';
 import { PALETTE, type RGB } from '../../utils/colorScales';
@@ -15,6 +15,13 @@ import { getIconAtlas, ICON_MAPPING } from './iconAtlas';
 export const SEWER_NODE_LAYER = 'sewer-nodes';
 export const SEWER_CONDUIT_LAYER = 'sewer-conduits';
 export const SEWER_CATCHMENT_LAYER = 'sewer-catchments';
+export const SEWER_PUMP_LAYER = 'sewer-pumps';
+
+export interface SewerPumpDatum {
+  pump: SewerPump;
+  path: LngLat[];
+  mid: { position: LngLat; angle: number };
+}
 
 export interface SewerCatchmentDatum {
   catchment: SewerCatchment;
@@ -38,6 +45,8 @@ export interface SewerConduitDatum {
 export interface SewerMapData {
   nodes: SewerNodeDatum[];
   conduits: SewerConduitDatum[];
+  /** 중계펌프장 (습정 → 토출) */
+  pumps: SewerPumpDatum[];
   /** 경계를 그린 유역만 */
   catchments: SewerCatchmentDatum[];
 }
@@ -64,6 +73,13 @@ export function sewerMapData(project: SewerProject): SewerMapData {
     const path = [a, b];
     conduits.push({ conduit, path, mid: midpointOfPath(path) });
   }
+  const pumps: SewerPumpDatum[] = [];
+  for (const pump of project.pumps ?? []) {
+    const a = positions.get(pump.wet_well);
+    const b = positions.get(pump.discharge);
+    if (!a || !b) continue;
+    pumps.push({ pump, path: [a, b], mid: midpointOfPath([a, b]) });
+  }
   const frame = sewerFrame(project);
   const catchments: SewerCatchmentDatum[] = [];
   for (const catchment of project.catchments) {
@@ -74,7 +90,7 @@ export function sewerMapData(project: SewerProject): SewerMapData {
     const outlet = positions.get(catchment.outlet);
     catchments.push({ catchment, ring, center, link: outlet ? [center, outlet] : [] });
   }
-  return { nodes, conduits, catchments };
+  return { nodes, conduits, pumps, catchments };
 }
 
 function widthOf(diameter: number): number {
@@ -190,6 +206,42 @@ ${d.catchment.area.toFixed(2)} ha`,
       updateTriggers: { getColor: styleKey, getWidth: styleKey },
     }),
   );
+
+  // 중계펌프장: 습정 → 토출 (압송), 주황 선과 펌프 기호
+  if (data.pumps.length > 0) {
+    if (selection?.kind === 'pump') {
+      const datum = data.pumps.find((d) => d.pump.id === selection.id);
+      if (datum) {
+        layers.push(
+          new PathLayer<SewerPumpDatum>({ id: 'sewer-pump-selected', data: [datum], getPath: (d) => d.path, getColor: [...PALETTE.selection, 235], getWidth: 11, widthUnits: 'pixels', capRounded: true }),
+        );
+      }
+    }
+    layers.push(
+      new PathLayer<SewerPumpDatum>({
+        id: SEWER_PUMP_LAYER,
+        data: data.pumps,
+        getPath: (d) => d.path,
+        getColor: [...PALETTE.pump, 240],
+        getWidth: 4,
+        widthUnits: 'pixels',
+        capRounded: true,
+        pickable: true,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 110],
+      }),
+      new IconLayer<SewerPumpDatum>({
+        id: 'sewer-pump-icons',
+        data: data.pumps,
+        iconAtlas: getIconAtlas(),
+        iconMapping: ICON_MAPPING,
+        getIcon: () => 'pump',
+        getPosition: (d) => d.mid.position,
+        getSize: 24,
+        sizeUnits: 'pixels',
+      }),
+    );
+  }
 
   // 흐름 방향: 상류 → 하류 (중력식이므로 작도 방향이 곧 흐름 방향)
   if (zoom >= 13 || data.conduits.length <= 600) {

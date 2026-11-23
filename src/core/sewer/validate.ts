@@ -12,6 +12,7 @@ import {
   type SewerNode,
   type SewerOptions,
   type SewerProject,
+  type SewerPump,
 } from './types';
 
 export interface ValidationDetail {
@@ -169,6 +170,30 @@ function parseCatchment(c: Collector, raw: unknown, index: number): SewerCatchme
   return catchment;
 }
 
+function nullableNum(c: Collector, o: Raw, key: string, loc: (string | number)[], spec: NumSpec): number | null {
+  if (o[key] === undefined || o[key] === null) return null;
+  return num(c, o, key, loc, spec, true);
+}
+
+function parsePump(c: Collector, raw: unknown, index: number): SewerPump {
+  const loc = ['pumps', index];
+  const o = (typeof raw === 'object' && raw !== null ? raw : {}) as Raw;
+  if (typeof raw !== 'object' || raw === null) c.add('model_type', loc, '객체여야 합니다.');
+  extras(c, o, ['id', 'wet_well', 'discharge', 'capacity', 'head', 'on_depth', 'off_depth', 'area'], loc);
+  const pump: SewerPump = {
+    id: id(c, o, 'id', loc),
+    wet_well: id(c, o, 'wet_well', loc),
+    discharge: id(c, o, 'discharge', loc),
+    capacity: nullableNum(c, o, 'capacity', loc, { exMin: 0 }),
+    head: nullableNum(c, o, 'head', loc, { exMin: 0 }),
+    on_depth: num(c, o, 'on_depth', loc, { exMin: 0, default: 1.5 }),
+    off_depth: num(c, o, 'off_depth', loc, { min: 0, default: 0.5 }),
+    area: nullableNum(c, o, 'area', loc, { exMin: 0 }),
+  };
+  if (pump.off_depth >= pump.on_depth) c.add('value_error', loc, `${pump.id}: 정지 수심은 가동 수심보다 낮아야 합니다.`);
+  return pump;
+}
+
 function parseOptions(c: Collector, raw: unknown): SewerOptions {
   const loc = ['options'];
   const d = defaultOptions();
@@ -253,7 +278,7 @@ export function parseSewerProject(raw: unknown): SewerProject {
     throw new SewerValidationError([{ type: 'model_type', loc: [], msg: '프로젝트는 객체여야 합니다.' }]);
   }
   const o = raw as Raw;
-  extras(c, o, ['schema_version', 'name', 'nodes', 'conduits', 'catchments', 'options', 'constraints'], []);
+  extras(c, o, ['schema_version', 'name', 'nodes', 'conduits', 'catchments', 'pumps', 'options', 'constraints'], []);
   if (o.schema_version !== undefined && o.schema_version !== 1) c.add('literal_error', ['schema_version'], 'schema_version 은 1 이어야 합니다.');
   if (o.name !== undefined && typeof o.name !== 'string') c.add('string_type', ['name'], '문자열이어야 합니다.');
   const list = (key: string, min: number) => {
@@ -272,6 +297,7 @@ export function parseSewerProject(raw: unknown): SewerProject {
   const nodes = list('nodes', 2).map((n, i) => parseNode(c, n, i));
   const conduits = list('conduits', 1).map((n, i) => parseConduit(c, n, i));
   const catchments = list('catchments', 0).map((n, i) => parseCatchment(c, n, i));
+  const pumps = list('pumps', 0).map((n, i) => parsePump(c, n, i));
   const options = parseOptions(c, o.options);
   const constraints = parseConstraints(c, o.constraints);
 
@@ -284,7 +310,7 @@ export function parseSewerProject(raw: unknown): SewerProject {
   if (c.details.length === 0) {
     // 프로젝트 교차 검증 (Project.after validator) — 첫 오류에서 중단
     const ids = nodes.map((n) => n.id);
-    const sets: [string[], string][] = [[ids, '절점'], [conduits.map((x) => x.id), '관로'], [catchments.map((x) => x.id), '유역']];
+    const sets: [string[], string][] = [[ids, '절점'], [[...conduits.map((x) => x.id), ...pumps.map((x) => x.id)], '관로·펌프'], [catchments.map((x) => x.id), '유역']];
     for (const [values, label] of sets) {
       if (values.length !== new Set(values).size) {
         throw new SewerValidationError([{ type: 'value_error', loc: [], msg: `${label} ID가 중복되었습니다.` }]);
@@ -295,6 +321,18 @@ export function parseSewerProject(raw: unknown): SewerProject {
       if (!byId.has(x.upstream) || !byId.has(x.downstream) || x.upstream === x.downstream) {
         throw new SewerValidationError([{ type: 'value_error', loc: [], msg: `${x.id}: 연결 절점이 없거나 자기 자신에 연결되었습니다.` }]);
       }
+    }
+    const wells = new Set<string>();
+    for (const x of pumps) {
+      const w = byId.get(x.wet_well);
+      const d = byId.get(x.discharge);
+      if (!w || !d || x.wet_well === x.discharge) {
+        throw new SewerValidationError([{ type: 'value_error', loc: [], msg: `${x.id}: 습정·토출 맨홀이 없거나 같은 맨홀입니다.` }]);
+      }
+      if (w.kind !== 'JUNCTION') throw new SewerValidationError([{ type: 'value_error', loc: [], msg: `${x.id}: 습정은 맨홀이어야 합니다 (방류구 불가).` }]);
+      if (wells.has(x.wet_well)) throw new SewerValidationError([{ type: 'value_error', loc: [], msg: `${x.wet_well}: 습정 하나에 펌프는 하나만 둘 수 있습니다 (예비 펌프는 용량에 포함).` }]);
+      wells.add(x.wet_well);
+      if (x.on_depth > w.ground - w.invert) throw new SewerValidationError([{ type: 'value_error', loc: [], msg: `${x.id}: 가동 수심 ${x.on_depth} m 가 습정 깊이 ${(w.ground - w.invert).toFixed(2)} m 보다 깊습니다.` }]);
     }
     for (const s of catchments) {
       const out = byId.get(s.outlet);
@@ -308,6 +346,7 @@ export function parseSewerProject(raw: unknown): SewerProject {
     nodes,
     conduits,
     catchments,
+    ...(pumps.length > 0 ? { pumps } : {}),
     options,
     constraints,
   };
