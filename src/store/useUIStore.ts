@@ -21,6 +21,7 @@ export interface MultiSelection {
 export type BasemapId = 'osm' | 'satellite' | 'vworld-base' | 'vworld-satellite' | 'vworld-hybrid' | 'none';
 export type NodeTheme = 'none' | 'pressure' | 'head' | 'demand' | 'quality' | 'zone' | 'elevation';
 export type LinkTheme = 'none' | 'velocity' | 'flow' | 'unitHeadloss' | 'quality' | 'zone' | 'diameter';
+import type { LinkLabelKind, NodeLabelKind } from '../components/map/mapLabels';
 export type BottomTab = 'timeline' | 'profile' | 'table' | 'criteria' | 'peak' | 'validation' | 'log';
 export type ModalId = 'validation' | 'simulation' | 'curves' | 'controls' | 'fireflow' | 'correction' | 'sewer' | 'draft' | 'allocate' | 'tools' | 'sewerGis' | 'sewage' | 'waterDemand' | 'land' | 'pressureFix' | null;
 
@@ -147,6 +148,9 @@ interface UIState {
   layers: LayerVisibility;
   nodeTheme: NodeTheme;
   linkTheme: LinkTheme;
+  /** 라벨 레이어에 절점·관로마다 쓸 글자 */
+  nodeLabel: NodeLabelKind;
+  linkLabel: LinkLabelKind;
   drawing: DrawingState | null;
   cursor: LngLat | null;
   snapNodeId: string | null;
@@ -177,6 +181,8 @@ interface UIState {
   toggleLayer: (layer: keyof LayerVisibility) => void;
   setNodeTheme: (theme: NodeTheme) => void;
   setLinkTheme: (theme: LinkTheme) => void;
+  setNodeLabel: (kind: NodeLabelKind) => void;
+  setLinkLabel: (kind: LinkLabelKind) => void;
   setDrawing: (drawing: DrawingState | null) => void;
   setCursor: (cursor: LngLat | null, snapNodeId: string | null) => void;
   setBottomTab: (tab: BottomTab) => void;
@@ -227,6 +233,8 @@ export const useUIStore = create<UIState>()((set, get) => ({
   },
   nodeTheme: 'pressure',
   linkTheme: 'velocity',
+  nodeLabel: 'id',
+  linkLabel: 'none',
   drawing: null,
   cursor: null,
   snapNodeId: null,
@@ -270,6 +278,8 @@ export const useUIStore = create<UIState>()((set, get) => ({
   toggleLayer: (layer) => set((s) => ({ layers: { ...s.layers, [layer]: !s.layers[layer] } })),
   setNodeTheme: (nodeTheme) => set({ nodeTheme }),
   setLinkTheme: (linkTheme) => set({ linkTheme }),
+  setNodeLabel: (nodeLabel) => set({ nodeLabel }),
+  setLinkLabel: (linkLabel) => set({ linkLabel }),
   setDrawing: (drawing) => set({ drawing }),
   setCursor: (cursor, snapNodeId) => set({ cursor, snapNodeId }),
   setBottomTab: (bottomTab) => set({ bottomTab, bottomCollapsed: false }),

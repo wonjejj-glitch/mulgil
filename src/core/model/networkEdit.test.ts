@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import sample from '../../../public/samples/sample-district.inp?raw';
+import { runHydraulics } from '../engine/epanetRunner';
+import { linkSeries, nodeSeries, toSimulationResults } from '../engine/simulationManager';
 import { parseInp } from '../io/inpParser';
-import { renameLink, renameNode, splitPipe } from './networkEdit';
+import { writeInp } from '../io/inpWriter';
+import { insertDeviceOnPipe, renameLink, renameNode, splitPipe } from './networkEdit';
 
 const TEXT = [
   '[JUNCTIONS]', ' A 10 1', ' B 10 1',
@@ -52,5 +56,44 @@ describe('splitPipe', () => {
     if (left.type === 'pipe' && right.type === 'pipe') {
       expect(left.length + right.length).toBeCloseTo(total, 1);
     }
+  });
+});
+
+describe('insertDeviceOnPipe (관로 가운데에 펌프·밸브)', () => {
+  it('감압밸브는 하류 압력을 설정값으로 낮추고, 펌프는 한 점 곡선 양정만큼 수두를 올린다', async () => {
+    const base = parseInp(sample).model;
+    const solve = async (m: typeof base) => toSimulationResults(await runHydraulics(writeInp(m, { forEngine: true })), 0);
+    const before = await solve(base);
+    // 수원지에서 나가는 관 = 관망 전체가 이 관으로 물을 받는다
+    const main = Object.values(base.links).find((l) => l.type === 'pipe' && (base.nodes[l.startNodeId].type === 'reservoir' || base.nodes[l.endNodeId].type === 'reservoir'))!;
+    const flowSign = Math.sign(linkSeries(before, 'flow', main.id).reduce((a, q) => a + q, 0)) || 1;
+    const a = base.nodes[main.startNodeId].position;
+    const b = base.nodes[main.endNodeId].position;
+    const mid: [number, number] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+
+    const prvModel = structuredClone(base);
+    const prv = insertDeviceOnPipe(prvModel, 'valve', main.id, mid, { flowSign })!;
+    expect(prvModel.links[prv.linkId]).toMatchObject({ type: 'valve', valveType: 'PRV', diameter: main.type === 'pipe' ? main.diameter : 0 });
+    const linksBefore = Object.keys(base.links).length;
+    expect(Object.keys(prvModel.links)).toHaveLength(linksBefore + 2); // 관이 둘로 + 밸브
+    const upPressure = Math.min(...nodeSeries(before, 'pressure', flowSign > 0 ? main.endNodeId : main.startNodeId));
+    const setting = Math.max(5, Math.round(upPressure - 15));
+    const valve = prvModel.links[prv.linkId];
+    if (valve.type === 'valve') valve.setting = String(setting);
+    const r1 = await solve(prvModel);
+    // 밸브로 물이 흐르는 시각에는 하류 압력 = 설정값 (배수지가 하류를 채우는 시각엔 밸브가 닫힌다)
+    const q = linkSeries(r1, 'flow', prv.linkId);
+    const down = nodeSeries(r1, 'pressure', prv.downstreamNodeId);
+    const active = q.map((v, t) => (v > 0.01 ? down[t] : NaN)).filter(Number.isFinite);
+    expect(active.length).toBeGreaterThan(0);
+    for (const p of active) expect(p).toBeCloseTo(setting, 0);
+
+    const pumpModel = structuredClone(base);
+    const peak = Math.round(Math.max(...linkSeries(before, 'flow', main.id).map(Math.abs)) * 1000) / 1000;
+    const pump = insertDeviceOnPipe(pumpModel, 'pump', main.id, mid, { flowSign, pumpFlow: peak, pumpHead: 20 })!;
+    expect(pumpModel.curves[pump.curveId!]).toEqual([[peak, 20]]);
+    const r2 = await solve(pumpModel);
+    const lift = nodeSeries(r2, 'head', pump.downstreamNodeId)[0] - nodeSeries(r2, 'head', pump.upstreamNodeId)[0];
+    expect(lift).toBeGreaterThan(5);
   });
 });

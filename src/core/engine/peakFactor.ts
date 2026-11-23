@@ -35,6 +35,8 @@ export function modelWithFactor(model: NetworkModel, factor: number): NetworkMod
 
 export interface FactorScenario {
   factor: number;
+  /** 수요 절점 수요량 합의 전 시간 최대 (유량 단위) — 계수가 실제로 곱해졌는지 보는 값 */
+  totalDemand: number;
   /** 배수지·수원지 제외 절점의 전 시간 최저 수압 */
   minPressure: number;
   minPressureNode: string;
@@ -54,9 +56,11 @@ export function summarizeScenario(model: Pick<NetworkModel, 'nodes' | 'links'>, 
   const N = r.nodeIds.length;
   const L = r.linkIds.length;
   let minPressure = Infinity, minPressureNode = '', maxPressure = -Infinity, negative = 0;
+  const demandSum = new Float64Array(r.stepCount);
   for (let i = 0; i < N; i++) {
     const id = r.nodeIds[i];
     if (model.nodes[id]?.type !== 'junction') continue;
+    for (let t = 0; t < r.stepCount; t++) demandSum[t] += Math.max(0, r.node.demand[t * N + i]);
     let lo = Infinity;
     for (let t = 0; t < r.stepCount; t++) {
       const p = r.node.pressure[t * N + i];
@@ -79,6 +83,7 @@ export function summarizeScenario(model: Pick<NetworkModel, 'nodes' | 'links'>, 
   const count = (k: string) => hits.filter((h) => h.kind === k).length;
   return {
     factor,
+    totalDemand: demandSum.length > 0 ? Math.max(...demandSum) : 0,
     minPressure: Number.isFinite(minPressure) ? minPressure : 0,
     minPressureNode,
     maxPressure: Number.isFinite(maxPressure) ? maxPressure : 0,
@@ -92,6 +97,16 @@ export function summarizeScenario(model: Pick<NetworkModel, 'nodes' | 'links'>, 
   };
 }
 
+/**
+ * 계수를 바꿔도 수압이 거의 그대로인지 (최저 수압 차이 0.1 m 미만).
+ * 수요가 관 크기에 비해 아주 작으면 관로 손실이 없어 수압이 표고·수원 수위로만 정해진다 — 계산이 틀린 것이 아니다.
+ */
+export function pressureInsensitive(rows: readonly FactorScenario[]): boolean {
+  if (rows.length < 2) return false;
+  const lo = rows.map((r) => r.minPressure);
+  return Math.max(...lo) - Math.min(...lo) < 0.1;
+}
+
 /** '1, 1.3, 1.5' 같은 입력을 계수 목록으로 (양수만, 중복 제거, 오름차순, 최대 8개). */
 export function parseFactors(text: string): number[] {
   const values = text
@@ -102,9 +117,9 @@ export function parseFactors(text: string): number[] {
 }
 
 export function scenariosCsv(rows: FactorScenario[], pressureUnit: string, velocityUnit: string): string {
-  const head = ['시간최대계수', `최저수압(${pressureUnit})`, '최저수압절점', `최고수압(${pressureUnit})`, `최대유속(${velocityUnit})`, '최대유속관로', '저수압', '고수압', '저유속', '고유속', '음압'];
+  const head = ['시간최대계수', '총수요', `최저수압(${pressureUnit})`, '최저수압절점', `최고수압(${pressureUnit})`, `최대유속(${velocityUnit})`, '최대유속관로', '저수압', '고수압', '저유속', '고유속', '음압'];
   const body = rows.map((r) =>
-    [r.factor, r.minPressure.toFixed(2), r.minPressureNode, r.maxPressure.toFixed(2), r.maxVelocity.toFixed(3), r.maxVelocityLink, r.lowPressure, r.highPressure, r.lowVelocity, r.highVelocity, r.negative].join(','),
+    [r.factor, r.totalDemand.toFixed(2), r.minPressure.toFixed(2), r.minPressureNode, r.maxPressure.toFixed(2), r.maxVelocity.toFixed(3), r.maxVelocityLink, r.lowPressure, r.highPressure, r.lowVelocity, r.highVelocity, r.negative].join(','),
   );
   return [head.join(','), ...body].join('\r\n');
 }

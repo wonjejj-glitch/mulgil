@@ -317,6 +317,71 @@ export function splitPipe(
   return { nodeId, newPipeId };
 }
 
+export interface InsertDeviceOptions {
+  /** 관로 흐름 방향: 1 = 시점→종점, -1 = 종점→시점 (해석 결과 없으면 1). 펌프·밸브는 흐름 방향으로 놓는다. */
+  flowSign?: number;
+  /** 펌프 한 점 곡선의 설계 유량 (모델 유량 단위) */
+  pumpFlow?: number;
+  /** 펌프 한 점 곡선의 양정 (모델 수두 단위) */
+  pumpHead?: number;
+}
+
+export interface InsertDeviceResult {
+  linkId: string;
+  /** 장치 상류 절점 */
+  upstreamNodeId: string;
+  /** 장치 하류 절점 */
+  downstreamNodeId: string;
+  curveId: string | null;
+}
+
+/**
+ * 관로 가운데(누른 점)에 펌프·밸브를 끼워 넣는다.
+ * 관을 그 점에서 둘로 나누고, 바로 옆(약 2 m)에 절점 하나를 더 만들어 두 절점 사이에 장치를 둔다.
+ * 펌프는 한 점 양정 곡선(설계 유량·양정)으로, 밸브는 관경을 이어받은 감압밸브(PRV)로 만든다.
+ */
+export function insertDeviceOnPipe(
+  model: NetworkModel,
+  type: 'pump' | 'valve',
+  pipeId: string,
+  point: LngLat,
+  options: InsertDeviceOptions = {},
+): InsertDeviceResult | null {
+  const pipe = model.links[pipeId];
+  if (!pipe || pipe.type !== 'pipe') return null;
+  const diameter = pipe.diameter;
+  const split = splitPipe(model, pipeId, point);
+  if (!split) return null;
+  const a = model.nodes[split.nodeId];
+  const right = model.links[split.newPipeId] as Pipe;
+  const toward = right.vertices[0] ?? model.nodes[right.endNodeId]?.position ?? a.position;
+  const span = distanceMeters(a.position, toward);
+  const f = span > 0 ? Math.min(0.5, 2 / span) : 0;
+  const b = addNode(model, 'junction', [a.position[0] + (toward[0] - a.position[0]) * f, a.position[1] + (toward[1] - a.position[1]) * f]);
+  b.elevation = a.elevation;
+  right.startNodeId = b.id;
+  if (!right.isCustomLength) right.length = computeLinkLength(model, right);
+
+  const forward = (options.flowSign ?? 1) >= 0;
+  const up = forward ? a.id : b.id;
+  const down = forward ? b.id : a.id;
+  const link = addLink(model, type, up, down);
+  if (!link) return null;
+  let curveId: string | null = null;
+  if (link.type === 'valve') {
+    link.diameter = diameter;
+  } else if (link.type === 'pump') {
+    const us = isUsUnits(model.options.flowUnits);
+    curveId = nextId(`${link.id}_H`, model.curves);
+    const flow = options.pumpFlow && options.pumpFlow > 0 ? options.pumpFlow : 1;
+    const head = options.pumpHead && options.pumpHead > 0 ? options.pumpHead : us ? 100 : 30;
+    model.curves[curveId] = [[Math.round(flow * 1000) / 1000, head]];
+    link.headCurve = curveId;
+    link.power = 0;
+  }
+  return { linkId: link.id, upstreamNodeId: up, downstreamNodeId: down, curveId };
+}
+
 /**
  * removeId 절점을 keepId 절점으로 합친다. removeId 에 연결된 링크는 keepId 로 옮기고,
  * 그 결과 시점=종점이 된 링크는 삭제한다.

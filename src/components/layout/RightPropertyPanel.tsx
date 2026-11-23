@@ -12,6 +12,7 @@ import { useUIStore } from '../../store/useUIStore';
 import { wgs84ToEpsg } from '../../utils/geoMath';
 import { Button, FieldRow, NumberField, ReadonlyValue, Section, SelectField, TextField } from '../ui/fields';
 import { MultiSelectionPanel } from './MultiSelectionPanel';
+import { PumpDutyFields, ValveSettingFields } from './DeviceFields';
 
 const NODE_TYPE_LABEL = { junction: '절점 (Junction)', reservoir: '수원지 (Reservoir)', tank: '배수지 (Tank)' } as const;
 const LINK_TYPE_LABEL = { pipe: '관로 (Pipe)', pump: '펌프 (Pump)', valve: '밸브 (Valve)' } as const;
@@ -429,6 +430,7 @@ function LinkEditor({ link, labels }: { link: NetworkLink; labels: UnitLabels })
 
         {link.type === 'pump' && (
           <>
+            <PumpDutyFields link={link} labels={labels} />
             <FieldRow label="양정 곡선">
               <SelectField value={link.headCurve} options={curveOptions} onChange={(headCurve) => patch({ headCurve })} />
             </FieldRow>
@@ -453,9 +455,7 @@ function LinkEditor({ link, labels }: { link: NetworkLink; labels: UnitLabels })
             <FieldRow label="관경" unit={labels.diameter}>
               <NumberField value={link.diameter} min={0} onCommit={(diameter) => patch({ diameter })} />
             </FieldRow>
-            <FieldRow label="설정값">
-              <TextField value={link.setting} onCommit={(setting) => patch({ setting: setting || '0' })} />
-            </FieldRow>
+            <ValveSettingFields link={link} labels={labels} />
             <FieldRow label="부차손실계수">
               <NumberField value={link.minorLoss} min={0} onCommit={(minorLoss) => patch({ minorLoss })} />
             </FieldRow>

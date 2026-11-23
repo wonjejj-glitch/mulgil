@@ -8,6 +8,7 @@ import { useSimulationStore } from '../../store/useSimulationStore';
 import { BUILT_IN_VWORLD_KEY, useUIStore, type LayerVisibility } from '../../store/useUIStore';
 import { CRS_DEFS, type ImportCrsChoice } from '../../utils/geoMath';
 import { BASEMAP_OPTIONS } from '../map/basemaps';
+import { LINK_LABEL_OPTIONS, NODE_LABEL_OPTIONS } from '../map/mapLabels';
 import { LINK_THEME_OPTIONS, NODE_THEME_OPTIONS } from '../map/thematic';
 import { FieldRow, Section, SelectField, TextField } from '../ui/fields';
 
@@ -45,6 +46,32 @@ function LayerRow({
       <span className="flex-1 truncate">{label}</span>
       {count !== undefined && <span className="tabular-nums text-ink-muted">{count.toLocaleString()}</span>}
     </button>
+  );
+}
+
+/** 라벨에 쓸 값: 절점은 ID·수압·수요량 등, 관로는 관경·유속 등 (지금 시간 스텝 값). */
+function LabelChoices() {
+  const on = useUIStore((s) => s.layers.labels);
+  const nodeLabel = useUIStore((s) => s.nodeLabel);
+  const linkLabel = useUIStore((s) => s.linkLabel);
+  const setNodeLabel = useUIStore((s) => s.setNodeLabel);
+  const setLinkLabel = useUIStore((s) => s.setLinkLabel);
+  const flowUnits = useNetworkStore((s) => s.model.options.flowUnits);
+  const hasResults = useSimulationStore((s) => s.results !== null);
+  if (!on) return null;
+  const u = unitLabels(flowUnits);
+  const text = (o: { label: string; unit: keyof typeof u | null; needsResults: boolean }) =>
+    `${o.label}${o.unit ? ` (${u[o.unit]})` : ''}${o.needsResults && !hasResults ? ' — 해석 후' : ''}`;
+  return (
+    <div className="ml-6 space-y-1 pb-1">
+      <FieldRow label="절점">
+        <SelectField value={nodeLabel} onChange={setNodeLabel} options={NODE_LABEL_OPTIONS.map((o) => ({ value: o.value, label: text(o) }))} />
+      </FieldRow>
+      <FieldRow label="관로">
+        <SelectField value={linkLabel} onChange={setLinkLabel} options={LINK_LABEL_OPTIONS.map((o) => ({ value: o.value, label: text(o) }))} />
+      </FieldRow>
+      <p className="text-[10px] text-ink-muted">지도를 확대하면 보입니다(관로 값은 조금 더 확대). 해석 값은 아래 시간 막대의 시각 값입니다.</p>
+    </div>
   );
 }
 
@@ -103,7 +130,8 @@ export function LeftLayerPanel() {
           <LayerRow layer="sources" label="수원지·배수지" count={counts.source} swatch="#3987e5" />
           <LayerRow layer="pipes" label="관로" count={counts.pipe} swatch="#6ea0d7" />
           <LayerRow layer="pumpsValves" label="펌프·밸브" count={counts.device} swatch="#fab219" />
-          <LayerRow layer="labels" label="절점 ID 라벨" />
+          <LayerRow layer="labels" label="라벨 (절점·관로 값)" />
+          <LabelChoices />
           <LayerRow layer="arrows" label="유향 화살표" />
           <LayerRow layer="columns3d" label="3D 수압 기둥" />
         </div>

@@ -5,6 +5,7 @@ import { PSI_PER_METER } from '../../core/model/units';
 import type { Highlight, LayerVisibility, MultiSelection, Selection } from '../../store/useUIStore';
 import { PALETTE } from '../../utils/colorScales';
 import { getIconAtlas, ICON_MAPPING } from './iconAtlas';
+import type { Labelers } from './mapLabels';
 import type { Thematic } from './thematic';
 
 export interface LinkDatum {
@@ -30,6 +31,10 @@ export interface LayerInput {
   profile: { linkIds: string[]; waypointIds: string[] } | null;
   zoom: number;
   usUnits: boolean;
+  /** 라벨 글자 (절점: ID·수압·수요량 등, 관로: 관경·유속 등) */
+  labelers: Labelers;
+  /** 라벨 종류·시간 스텝이 바뀔 때 달라지는 값 (updateTriggers 용) */
+  labelKey: string;
 }
 
 const PROFILE_COLOR: [number, number, number] = [236, 131, 90];
@@ -50,7 +55,7 @@ function pipeWidth(link: NetworkLink, us: boolean): number {
 }
 
 export function buildNetworkLayers(input: LayerInput): Layer[] {
-  const { junctions, sources, links, nodesById, thematic, styleKey, layers, selection, highlight, multiSelection, profile, zoom, usUnits } =
+  const { junctions, sources, links, nodesById, thematic, styleKey, layers, selection, highlight, multiSelection, profile, zoom, usUnits, labelers, labelKey } =
     input;
   const result: Layer[] = [];
   const atlas = getIconAtlas();
@@ -327,13 +332,36 @@ export function buildNetworkLayers(input: LayerInput): Layer[] {
     );
   }
 
+  // 관로 라벨: 관 가운데, 절점 라벨보다 한 단계 더 확대했을 때 (관이 절점보다 많아 겹치기 쉽다)
+  if (layers.labels && zoom >= 15.5) {
+    const data = visibleLinks.map((d) => ({ d, text: labelers.link(d.link) })).filter((x) => x.text !== '');
+    if (data.length > 0) {
+      result.push(
+        new TextLayer<{ d: LinkDatum; text: string }>({
+          id: 'link-labels',
+          data,
+          getPosition: (x) => x.d.mid.position,
+          getText: (x) => x.text,
+          getSize: 10,
+          getColor: [190, 214, 240, 255],
+          background: true,
+          getBackgroundColor: [15, 19, 24, 170],
+          backgroundPadding: [2, 1],
+          fontFamily: 'system-ui, "Segoe UI", sans-serif',
+          characterSet: 'auto',
+        }),
+      );
+    }
+  }
+
   if (layers.labels && zoom >= 14.5) {
     result.push(
       new TextLayer<NetworkNode>({
         id: 'node-labels',
         data: [...(layers.junctions ? junctions : []), ...(layers.sources ? sources : [])],
         getPosition: (d) => d.position,
-        getText: (d) => d.id,
+        getText: (d) => labelers.node(d),
+        updateTriggers: { getText: labelKey },
         getSize: 11,
         getColor: [240, 239, 236, 255],
         getPixelOffset: [0, -15],

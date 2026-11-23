@@ -2,7 +2,7 @@
 import { Download, Play } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { defaultCriteria } from '../../core/engine/criteria';
-import { demandMultiplier, parseFactors, scenariosCsv, type FactorScenario } from '../../core/engine/peakFactor';
+import { demandMultiplier, parseFactors, pressureInsensitive, scenariosCsv, type FactorScenario } from '../../core/engine/peakFactor';
 import { unitLabels } from '../../core/model/units';
 import { applyDemandFactor, runFactorSweep } from '../../app/peakActions';
 import { useNetworkStore } from '../../store/useNetworkStore';
@@ -50,6 +50,8 @@ export function PeakFactorPanel() {
     ui.setHighlight({ nodeIds: [], linkIds: [id] });
   };
 
+  const flat = pressureInsensitive(rows) && rows.length === factors.length;
+  const peak = rows.length > 0 ? rows[rows.length - 1] : null;
   const bad = (n: number) => (n > 0 ? 'text-[#f3a5a5]' : 'text-ink-muted');
   return (
     <div className="flex h-full min-h-0 gap-3 p-2 text-xs">
@@ -97,11 +99,18 @@ export function PeakFactorPanel() {
             계수별 비교 해석을 누르면 계수마다 최저 수압·최대 유속과 기준을 벗어난 개수가 여기에 나옵니다. 줄을 누르면 그 계수를 관망에 적용해 해석합니다.
           </div>
         ) : (
+          <>
+          {flat && peak && (
+            <p className="border-b border-line bg-[#3a3220] px-2 py-1.5 text-[11px] text-[#f0d28a]">
+              계수를 바꿔도 수압이 거의 같습니다 — 수요 합계가 계수 {peak.factor}에서도 {peak.totalDemand.toFixed(2)} {units.flow}, 최대 유속 {peak.maxVelocity.toFixed(2)} {units.velocity}로 관 크기에 비해 작아
+              관로 손실수두가 거의 없고, 수압이 절점 표고와 수원 수위로만 정해집니다. 계산은 맞습니다. 절점 수요량이 제대로 들어 있는지(물 사용량 배분·단위) 먼저 확인하세요.
+            </p>
+          )}
           <table className="w-full tabular-nums">
             <thead className="sticky top-0 bg-panel text-ink-soft">
               <tr>
-                {['계수', `최저 수압 (${units.pressure})`, '위치', `최고 수압`, `최대 유속 (${units.velocity})`, '위치', '저수압', '고수압', '저유속', '고유속', '음압', ''].map((h, i) => (
-                  <th key={i} className={`whitespace-nowrap px-2 py-1 font-medium ${i === 2 || i === 5 ? 'text-left' : 'text-right'}`}>
+                {['계수', `총 수요 (${units.flow})`, `최저 수압 (${units.pressure})`, '위치', `최고 수압`, `최대 유속 (${units.velocity})`, '위치', '저수압', '고수압', '저유속', '고유속', '음압', ''].map((h, i) => (
+                  <th key={i} className={`whitespace-nowrap px-2 py-1 font-medium ${i === 3 || i === 6 ? 'text-left' : 'text-right'}`}>
                     {h}
                   </th>
                 ))}
@@ -111,6 +120,7 @@ export function PeakFactorPanel() {
               {rows.map((r) => (
                 <tr key={r.factor} className={`border-t border-line/60 ${Math.abs(r.factor - current) < 1e-6 ? 'bg-accent/10' : ''}`}>
                   <td className="px-2 py-1 text-right font-semibold text-ink">{r.factor}</td>
+                  <td className="px-2 py-1 text-right text-ink-soft">{r.totalDemand.toFixed(2)}</td>
                   <td className={`px-2 py-1 text-right ${r.minPressure < criteria.minPressure ? 'text-[#f3a5a5]' : 'text-ink'}`}>{r.minPressure.toFixed(2)}</td>
                   <td className="cursor-pointer px-2 py-1 text-ink-soft hover:text-ink" onClick={() => focusNode(r.minPressureNode)}>
                     {r.minPressureNode}
@@ -134,6 +144,7 @@ export function PeakFactorPanel() {
               ))}
             </tbody>
           </table>
+          </>
         )}
       </div>
     </div>

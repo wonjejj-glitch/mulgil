@@ -34,6 +34,8 @@ import { ColorRampLegend } from './ColorRampLegend';
 import { DrawingOverlay } from './DrawingOverlay';
 import { buildNetworkLayers, LINK_LAYER_IDS, NODE_LAYER_IDS, type LinkDatum } from './networkLayers';
 import { useThematic } from './thematic';
+import { makeLabelers } from './mapLabels';
+import { insertDeviceAt } from '../../app/deviceActions';
 import { useSwmmStore } from '../../store/useSwmmStore';
 import { SwmmLegend } from '../swmm/SwmmPanels';
 import { buildSwmmLayers } from '../swmm/swmmLayers';
@@ -55,8 +57,8 @@ const TOOL_HINTS: Record<Tool, string> = {
   reservoir: '지도를 클릭해 수원지를 추가합니다.',
   tank: '지도를 클릭해 배수지를 추가합니다.',
   pipe: '시작 절점 클릭 → 빈 곳 클릭으로 꺾임점 추가 → 절점 클릭 또는 더블클릭으로 완료 · Esc/우클릭 종료',
-  pump: '흡입측 절점 → 토출측 절점 순서로 클릭합니다 · Esc/우클릭 종료',
-  valve: '상류측 절점 → 하류측 절점 순서로 클릭합니다 · Esc/우클릭 종료',
+  pump: '관로 가운데를 누르면 그 관에 펌프를 넣습니다 · 또는 흡입측 절점 → 토출측 절점 순서로 클릭 · Esc/우클릭 종료',
+  valve: '관로 가운데를 누르면 그 관에 감압밸브를 넣습니다 · 또는 상류측 절점 → 하류측 절점 순서로 클릭 · Esc/우클릭 종료',
   manhole: '지도를 클릭해 맨홀을 추가합니다. 지반고는 가까운 절점 값(없으면 0), 관저고는 지반고 − 1.8 m 로 임시로 둡니다.',
   outfall: '지도를 클릭해 방류구(하류 끝)를 추가합니다.',
   conduit: '상류 맨홀 → 하류 맨홀(또는 방류구) 순서로 클릭합니다. 빈 곳을 클릭하면 그 자리에 맨홀을 만듭니다 · 이어 그리기 · Esc/우클릭 종료',
@@ -253,6 +255,10 @@ export function GisMapCanvas() {
   }, [links, nodes]);
 
   const styleKey = `${revision}:${resultsRevision}:${stepIndex}:${nodeTheme}:${linkTheme}`;
+  const nodeLabel = useUIStore((s) => s.nodeLabel);
+  const linkLabel = useUIStore((s) => s.linkLabel);
+  const labelers = useMemo(() => makeLabelers(results, stepIndex, nodeLabel, linkLabel), [results, stepIndex, nodeLabel, linkLabel]);
+  const labelKey = `${revision}:${resultsRevision}:${stepIndex}:${nodeLabel}:${linkLabel}`;
   const swmmStyleKey = `${swmmRun ? 'r' : 'n'}:${swmmPeriod}:${swmmThematic?.nodeScale?.title}:${swmmThematic?.linkScale?.title}:${swmmProject?.nodes.length}`;
   const draftLayers = useMemo(
     () => buildDraftLayers(draftCustomers, draftResult, draftSource, deckEpoch, draftArea, siteMarks),
@@ -311,9 +317,11 @@ export function GisMapCanvas() {
         profile,
         zoom,
         usUnits,
+        labelers,
+        labelKey,
       }),
     [
-      junctions, sources, linkData, nodes, thematic, results, styleKey, layerVisibility, selection, highlight, multiSelection, profile, zoom, usUnits,
+      junctions, sources, linkData, nodes, thematic, results, styleKey, layerVisibility, selection, highlight, multiSelection, profile, zoom, usUnits, labelers, labelKey,
       swmmProject, swmmThematic, swmmStyleKey, swmmSelection, swmmRun, deckEpoch, sewerLayers, floodLayer,
     ],
   );
@@ -702,6 +710,14 @@ export function GisMapCanvas() {
         const node = pickNodeForClick(event.point);
         const drawing = ui.drawing;
         if (!drawing) {
+          // 펌프·밸브 도구로 관로 가운데를 누르면 그 관에 바로 끼워 넣는다
+          if (!node && activeTool !== 'pipe') {
+            const pipe = pickLink(event.point);
+            if (pipe?.type === 'pipe') {
+              insertDeviceAt(activeTool as 'pump' | 'valve', pipe.id, lngLat);
+              return;
+            }
+          }
           const startNodeId = node?.id ?? net.addNode('junction', lngLat);
           ui.setDrawing({ linkType: activeTool as LinkType, startNodeId, vertices: [] });
           return;
